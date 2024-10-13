@@ -248,6 +248,8 @@ void uClockClass::resetCounters()
     ext_clock_tick = 0;
     ext_clock_us = 0;
     ext_interval_idx = 0;
+    div16th_counter = 0;
+    mod6_counter = 0;
 
     for (uint32_t t=0; t < MAX_TRACKS; t++) {
         mod_track_step_counter[t] = 0;
@@ -364,11 +366,8 @@ bool inline uClockClass::processShuffle()
     if (shff >= 0) {
         mod_shuffle = mod_step_counter - shff;
         // any late shuffle? we should skip next mod_step_counter == 0
-        if (last_shff < 0 && mod_step_counter != 1) {
-            if (shuffle_shoot_ctrl == true)
-                shuffle_shoot_ctrl = false;
-            return false;
-        }
+        if (last_shff < 0 && mod_step_counter != 1)
+            return false; 
     } else if (shff < 0) {
         mod_shuffle = mod_step_counter - (mod_step_ref + shff);
         //if (last_shff < 0 && mod_step_counter != 1)
@@ -411,9 +410,10 @@ bool inline uClockClass::processTrackShuffle(uint8_t track)
         mod_shuffle = mod_track_step_counter[track] - shff;
 
         // any late shuffle? we should skip next mod_track_step_counter == 0
-        if (track_shuffles[track].last_shff < 0 && mod_track_step_counter[track] != 1) {           
-            if (track_shuffles[track].shuffle_shoot_ctrl == true)
+        if (track_shuffles[track].last_shff < 0 && mod_track_step_counter[track] != 1) {    
+            if (track_shuffles[track].shuffle_shoot_ctrl == true){
                 track_shuffles[track].shuffle_shoot_ctrl = false;
+            }
 
             return false;
         }
@@ -426,6 +426,8 @@ bool inline uClockClass::processTrackShuffle(uint8_t track)
 
     track_shuffles[track].last_shff = shff;
 
+    //if (track == 2) Serial.printf("mod_shuffle: %d, mod_track_step_counter: %d, shff: %d shuffle_shoot_ctrl: \n", mod_shuffle, mod_track_step_counter[track], shff, track_shuffles[track].shuffle_shoot_ctrl);
+            
     // shuffle_shoot_ctrl helps keep track if we have shoot or not a note for the step space of ppqn/4 pulses
     if (mod_shuffle == 0 && track_shuffles[track].shuffle_shoot_ctrl == true) {        
         track_shuffles[track].shuffle_shoot_ctrl = false;
@@ -494,6 +496,7 @@ void uClockClass::handleTimerInt()
                 tick = int_clock_tick * mod24_ref;
                 mod24_counter = tick % mod24_ref;
                 mod_step_counter = tick % mod_step_ref;
+                // TODO: use inmod counters for rigid counters ...
             }
 
             uint32_t counter = ext_interval;
@@ -530,22 +533,11 @@ void uClockClass::handleTimerInt()
         onPPQNCallback(tick);
     }
 
-    for (uint8_t tm = 0; tm < MAX_TRACKS; tm++)
-    {
-        // reset track step mod counter reference ?
-        if (mod_track_step_counter[tm] == mod_step_ref)
-            mod_track_step_counter[tm] = 0;
-    }
-
-    if (onTrackStepCallback) {
-        for (uint8_t t = 0; t < MAX_TRACKS; t++)
-        {
-            if (processTrackShuffle(t)) {        
-                onTrackStepCallback(t, track_step_counter[t]);
-                // going forward to the next step call
-                ++track_step_counter[t];
-            }
+    if (mod6_counter == 0) {
+        if (onRigidStepCallback) {
+            onRigidStepCallback(div16th_counter);
         }
+        div16th_counter++;
     }
 
     // reset step mod counter reference ?
@@ -563,11 +555,34 @@ void uClockClass::handleTimerInt()
         }
     }
 
+    for (uint8_t tm = 0; tm < MAX_TRACKS; tm++)
+    {
+        // reset track step mod counter reference ?
+        if (mod_track_step_counter[tm] == mod_step_ref)
+            mod_track_step_counter[tm] = 0;
+    }
+
+    if (onTrackStepCallback) {
+        for (uint8_t t = 0; t < MAX_TRACKS; t++)
+        {
+            if (processTrackShuffle(t)) {
+                onTrackStepCallback(t, track_step_counter[t]);
+                // going forward to the next step call
+                ++track_step_counter[t];
+            }
+        }
+    }
+
     // tick me!
     ++tick;
     // increment mod counters
     ++mod24_counter;
     ++mod_step_counter;
+    // increment rigid counters
+    mod6_counter++;
+    if (mod6_counter == mod_step_ref) {
+        mod6_counter = 0;
+    }
 
     for (uint8_t tsm = 0; tsm < MAX_TRACKS; tsm++)
     {

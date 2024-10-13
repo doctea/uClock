@@ -50,7 +50,7 @@ namespace umodular { namespace clock {
 
 // min: -(ppqn/4)-1 step, max: (ppqn/4)-1 steps  
 // adjust the size of you template if more than 16 shuffle step info needed
-#define MAX_SHUFFLE_TEMPLATE_SIZE   16
+#define MAX_SHUFFLE_TEMPLATE_SIZE 64
 typedef struct {
     bool active = false;
     uint8_t size = MAX_SHUFFLE_TEMPLATE_SIZE;
@@ -111,6 +111,10 @@ class uClockClass {
             onPPQNCallback = callback;
         }
 
+        void setOnRigidStep(void (*callback)(uint32_t step)) {
+            onRigidStepCallback = callback;
+        }
+
         void setOnStep(void (*callback)(uint32_t step)) {
             onStepCallback = callback;
         }
@@ -129,6 +133,14 @@ class uClockClass {
 
         void setOnClockStop(void (*callback)()) {
             onClockStopCallback = callback;
+        }
+
+        uint8_t getModTrackStepCounter(uint8_t track) {
+            return mod_track_step_counter[track];
+        }
+
+        uint8_t getTrackStepCounter(uint8_t track) {
+            return track_step_counter[track];
         }
 
         void init();
@@ -192,6 +204,7 @@ class uClockClass {
 
         void (*onPPQNCallback)(uint32_t tick);
         void (*onStepCallback)(uint32_t step);
+        void (*onRigidStepCallback)(uint32_t step);
         void (*onTrackStepCallback)(uint8_t track, uint32_t step);
         void (*onSync24Callback)(uint32_t tick);
         void (*onClockStartCallback)();
@@ -209,6 +222,10 @@ class uClockClass {
         uint8_t mod_step_ref;
         uint32_t step_counter; // should we go uint16_t?
         uint32_t track_step_counter[MAX_TRACKS];
+
+        // rigid counters
+        uint32_t div16th_counter;
+        uint8_t mod6_counter;
 
         // external clock control
         volatile uint32_t ext_clock_us;
