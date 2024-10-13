@@ -367,6 +367,8 @@ bool inline uClockClass::processShuffle()
         mod_shuffle = mod_step_counter - shff;
         // any late shuffle? we should skip next mod_step_counter == 0
         if (last_shff < 0 && mod_step_counter != 1)
+            if (shuffle_shoot_ctrl == true)
+                shuffle_shoot_ctrl = false;
             return false; 
     } else if (shff < 0) {
         mod_shuffle = mod_step_counter - (mod_step_ref + shff);
