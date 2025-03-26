@@ -154,6 +154,7 @@ class uClockClass {
         void start();
         void stop();
         void pause();
+        void continue_playing();
         void setTempo(float bpm);
         float getTempo();
 
