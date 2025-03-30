@@ -27,42 +27,60 @@
  */
 #include "uClock.h"
 
-//
-// General Arduino AVRs port
-//
-#if defined(ARDUINO_ARCH_AVR)
-    #include "platforms/avr.h"
+// no hardware timer clock? use USE_UCLOCK_SOFTWARE_TIMER
+#if !defined(USE_UCLOCK_SOFTWARE_TIMER)
+    //
+    // General Arduino AVRs port
+    //
+    #if defined(ARDUINO_ARCH_AVR)
+        #include "platforms/avr.h"
+        #define UCLOCK_PLATFORM_FOUND
+    #endif
+    //
+    // Teensyduino ARMs port
+    //
+    #if defined(TEENSYDUINO)
+        #include "platforms/teensy.h"
+        #define UCLOCK_PLATFORM_FOUND
+    #endif
+    //
+    // Seedstudio XIAO M0 port
+    //
+    #if defined(SEEED_XIAO_M0)
+        #include "platforms/samd.h"
+        #define UCLOCK_PLATFORM_FOUND
+    #endif
+    //
+    // ESP32 family
+    //
+    #if defined(ARDUINO_ARCH_ESP32) || defined(ESP32)
+        #include "platforms/esp32.h"
+        #define UCLOCK_PLATFORM_FOUND
+    #endif
+    //
+    // STM32XX family
+    //
+    #if defined(ARDUINO_ARCH_STM32)
+        #include "platforms/stm32.h"
+        #define UCLOCK_PLATFORM_FOUND
+    #endif
+    //
+    // RP2040 (Raspberry Pico) family
+    //
+    #if defined(ARDUINO_ARCH_RP2040)
+        #include "platforms/rp2040.h"
+        #define UCLOCK_PLATFORM_FOUND
+    #endif
 #endif
+
 //
-// Teensyduino ARMs port
+// Software Timer for generic, board-agnostic, not-accurate, no-interrupt, software-only port
 //
-#if defined(TEENSYDUINO)
-    #include "platforms/teensy.h"
+#if !defined(UCLOCK_PLATFORM_FOUND)
+    #pragma message ("NOTE: uClock is using the 'software timer' approach instead of specific board interrupted support, because board is not supported or because of USE_UCLOCK_SOFTWARE_TIMER build flag. Remember to call uClock.run() inside your loop().")
+    #include "platforms/software.h"
 #endif
-//
-// Seedstudio XIAO M0 port
-//
-#if defined(SEEED_XIAO_M0)
-    #include "platforms/samd.h"
-#endif
-//
-// ESP32 family
-//
-#if defined(ARDUINO_ARCH_ESP32) || defined(ESP32)
-    #include "platforms/esp32.h"
-#endif
-//
-// STM32XX family
-//
-#if defined(ARDUINO_ARCH_STM32)
-    #include "platforms/stm32.h"
-#endif
-//
-// RP2040 (Raspberry Pico) family
-//
-#if defined(ARDUINO_ARCH_RP2040)
-    #include "platforms/rp2040.h"
-#endif
+
 
 //
 // Platform specific timer setup/control
@@ -126,7 +144,7 @@ void uClockClass::init()
 
 uint32_t uClockClass::bpmToMicroSeconds(float bpm) 
 {
-    return (60000000 / ppqn / bpm);
+    return (60000000.0f / (float)ppqn / bpm);
 }
 
 void uClockClass::setPPQN(PPQNResolution resolution)
@@ -194,13 +212,6 @@ void uClockClass::setTempo(float bpm)
     setTimerTempo(bpm);
 }
 
-// this function is based on sync24PPQN
-float inline uClockClass::freqToBpm(uint32_t freq)
-{
-    float usecs = 1/((float)freq/1000000.0);
-    return (float)((float)(usecs/(float)24) * 60.0);
-}
-
 float uClockClass::getTempo() 
 {
     if (mode == EXTERNAL_CLOCK) {
@@ -217,6 +228,22 @@ float uClockClass::getTempo()
         }
     }
     return tempo;
+}
+
+// for software timer implementation(fallback for no board support)
+void uClockClass::run()
+{
+#if !defined(UCLOCK_PLATFORM_FOUND)
+    // call software timer implementation of software
+    softwareTimerHandler(micros());
+#endif
+}
+
+// this function is based on sync24PPQN
+float inline uClockClass::freqToBpm(uint32_t freq)
+{
+    float usecs = 1/((float)freq/1000000.0);
+    return (float)((float)(usecs/(float)24) * 60.0);
 }
 
 void uClockClass::setMode(SyncMode tempo_mode) 

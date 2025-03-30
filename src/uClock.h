@@ -145,6 +145,9 @@ class uClockClass {
         void setTempo(float bpm);
         float getTempo();
 
+        // for software timer implementation(fallback for no board support)
+        void run();
+
         // external timming control
         void setMode(SyncMode tempo_mode);
         SyncMode getMode();
