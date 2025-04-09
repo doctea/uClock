@@ -211,13 +211,24 @@ void uClockClass::stop()
     }
 }
 
+void uClockClass::continue_playing() {
+    if (clock_state == PAUSED) {
+        start_timer = millis();
+        if (clock_mode == INTERNAL_CLOCK) {
+            clock_state = STARTED;
+        } else {
+            clock_state = STARTING;
+        }
+    }
+}
+
 void uClockClass::pause() 
 {
     if (clock_mode == INTERNAL_CLOCK) {
         if (clock_state == PAUSED) {
-            start();
+            continue_playing();
         } else {
-            stop();
+            clock_state = PAUSED;
         }
     }
 }
