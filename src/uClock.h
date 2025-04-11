@@ -135,6 +135,14 @@ class uClockClass {
             onClockStopCallback = callback;
         }
 
+        void setOnClockContinue(void (*callback)()) {
+            onClockStartCallback = callback;
+        }
+
+        void setOnClockPause(void (*callback)()) {
+            onClockPauseCallback = callback;
+        }
+
         uint8_t getModTrackStepCounter(uint8_t track) {
             return mod_track_step_counter[track];
         }
@@ -213,6 +221,8 @@ class uClockClass {
         void (*onSync24Callback)(uint32_t tick);
         void (*onClockStartCallback)();
         void (*onClockStopCallback)();
+        void (*onClockContinueCallback)();
+        void (*onClockPauseCallback)();
 
         // internal clock control
         // uint16_t ppqn;
