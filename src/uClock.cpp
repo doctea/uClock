@@ -192,6 +192,9 @@ void uClockClass::continue_playing() {
         } else {
             state = STARTING;
         }
+        if (onClockContinueCallback) {
+            onClockContinueCallback();
+        }
     }
 }
 
@@ -202,6 +205,9 @@ void uClockClass::pause()
             continue_playing();
         } else {
             state = PAUSED;
+            if (onClockPauseCallback) {
+                onClockPauseCallback();
+            }
         }
     }
 }

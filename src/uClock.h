@@ -131,6 +131,14 @@ class uClockClass {
             onClockStopCallback = callback;
         }
 
+        void setOnClockContinue(void (*callback)()) {
+            onClockStartCallback = callback;
+        }
+
+        void setOnClockPause(void (*callback)()) {
+            onClockPauseCallback = callback;
+        }
+
         void init();
         void setPPQN(PPQNResolution resolution);
 
@@ -200,6 +208,8 @@ class uClockClass {
         void (*onSync24Callback)(uint32_t tick);
         void (*onClockStartCallback)();
         void (*onClockStopCallback)();
+        void (*onClockContinueCallback)();
+        void (*onClockPauseCallback)();
 
         // internal clock control
         // uint16_t ppqn;
