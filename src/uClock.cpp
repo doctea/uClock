@@ -233,11 +233,9 @@ void uClockClass::handleInternalClock()
     }
 
     // StepSeq extension: step callback to support 16th old school style sequencers
-    // with builtin shuffle
-    if (tracks != nullptr) {
-        // process onStepCallback()
+    // with builtin shuffle - process onStepCallback()
+    if (tracks != nullptr)
         stepSeqTick();
-    }
 
     // main PPQNCallback
     if (onOutputPPQNCallback)
@@ -304,23 +302,22 @@ bool uClockClass::allowTick()
 
 void uClockClass::start()
 {
-    resetCounters();
+    ATOMIC(resetCounters())
     start_timer = millis();
-
-    if (onClockStartCallback)
-        onClockStartCallback();
 
     if (clock_mode == INTERNAL_CLOCK) {
         ATOMIC(clock_state = STARTED)
     } else {
         ATOMIC(clock_state = STARTING)
     }
+
+    if (onClockStartCallback)
+        onClockStartCallback();
 }
 
 void uClockClass::stop()
 {
     ATOMIC(clock_state = STOPED)
-    resetCounters();
     start_timer = 0;
     if (onClockStopCallback)
         onClockStopCallback();
@@ -504,10 +501,8 @@ void uClockClass::calculateReferencedata()
     mod_clock_ref = output_ppqn / input_ppqn;
     mod_step_ref = output_ppqn / 4;
     // sync callback references update
-    for (uint8_t i = 0; i < sync_callback_size; i++) {
-        if (sync_callbacks[i].callback)
-            sync_callbacks[i].sync_ref = output_ppqn / sync_callbacks[i].resolution;
-    }
+    for (uint8_t i = 0; i < sync_callback_size; i++)
+        sync_callbacks[i].sync_ref = output_ppqn / sync_callbacks[i].resolution;
 }
 
 void uClockClass::setOutputPPQN(PPQNResolution resolution)
@@ -604,17 +599,14 @@ void uClockClass::resetCounters()
     mod_clock_counter = 0;
     int_clock_tick = 0;
     ext_clock_tick = 0;
-    //ext_clock_us = 0;
-    //ext_interval = 0;
-    //ext_last_interval = 0;
+    ext_clock_us = 0;
+    ext_interval = 0;
     //ext_interval_idx = 0;
 
     // sync output counters
     for (uint8_t i = 0; i < sync_callback_size; i++) {
-        if (sync_callbacks[i].callback) {
-            sync_callbacks[i].mod_counter = 0;
-            sync_callbacks[i].tick = 0;
-        }
+        sync_callbacks[i].mod_counter = 0;
+        sync_callbacks[i].tick = 0;
     }
 
     // stepseq counters
@@ -624,9 +616,8 @@ void uClockClass::resetCounters()
     }
 
     // external bpm read buffer
-    //for (uint8_t i=0; i < ext_interval_buffer_size; i++) {
+    //for (uint8_t i=0; i < ext_interval_buffer_size; i++)
     //    ext_interval_buffer[i] = 0;
-    //}
 }
 
 void uClockClass::tap()
