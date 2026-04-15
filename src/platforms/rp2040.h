@@ -19,10 +19,10 @@ bool handlerISR(repeating_timer *timer)
 
 void initTimer(uint32_t init_clock) {
     // set up RPi interrupt timer
-    add_repeating_timer_us(-(int32_t)init_clock), &handlerISR, NULL, &timer);
+    add_repeating_timer_us(-(int32_t)init_clock, &handlerISR, NULL, &timer);
 }
 
 void setTimer(uint32_t us_interval) {
     cancel_repeating_timer(&timer);
-    add_repeating_timer_us(-(int32_t)us_interval), &handlerISR, NULL, &timer);
+    add_repeating_timer_us(-(int32_t)us_interval, &handlerISR, NULL, &timer);
 }
