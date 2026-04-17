@@ -294,8 +294,38 @@ void uClockClass::handleExternalClock()
             start_sync_counter = MINIMUM_SYNC_COUNTER;
             break;
         case SYNCING:
-            if (--start_sync_counter == 0)
+            // Accumulate valid intervals during SYNCING so the PLL buffer has real
+            // data by the time we reach STARTED.
+            if (ext_interval >= (60000000UL / input_ppqn / MAX_BPM)) {
+                ext_interval_buffer[ext_interval_idx] = ext_interval;
+                if (++ext_interval_idx >= ext_interval_buffer_size)
+                    ext_interval_idx = 0;
+            }
+            if (--start_sync_counter == 0) {
+                // Force-align all internal counters to ext_clock_tick, which is
+                // always the canonical song position.  The existing phase-lock only
+                // snaps on beat boundaries, which means without this we can start
+                // up to a full beat out of alignment.
+                tick = ext_clock_tick * mod_clock_ref;
+                int_clock_tick = ext_clock_tick;
+                mod_clock_counter = 0;
+                for (uint8_t track = 0; track < track_slots_size; track++) {
+                    tracks[track].step_counter = tick / mod_step_ref;
+                    tracks[track].mod_step_counter = 0;
+                }
+                for (uint8_t i = 0; i < sync_callback_size; i++) {
+                    if (sync_callbacks[i].callback) {
+                        sync_callbacks[i].tick = tick / sync_callbacks[i].sync_ref;
+                        sync_callbacks[i].mod_counter = 0;
+                    }
+                }
+                // Prime the timer to the correct BPM immediately.
+                if (ext_interval >= (60000000UL / input_ppqn / MAX_BPM)) {
+                    tempo = constrainBpm(freqToBpm(ext_interval));
+                    uClockSetTimerTempo(tempo);
+                }
                 clock_state = STARTED;
+            }
             break;
         default:
             // accumulate interval incoming ticks data for getTempo() smooth reads on slave clock_mode
