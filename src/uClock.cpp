@@ -165,6 +165,14 @@ void uClockClass::handleInternalClock()
     if (clock_state <= STARTING) // STOPED=0, PAUSED=1, STARTING=2, SYNCING=3, STARTED=4
         return;
 
+    // Watchdog: stop musical clock if no external pulse received for 1 second
+    if (clock_mode == EXTERNAL_CLOCK && clock_state == STARTED && ext_clock_us > 0) {
+        if (clock_diff(ext_clock_us, micros()) > 1000000UL) {
+            clock_state = PAUSED;
+            return;
+        }
+    }
+
     // tick phase lock and external tempo match for EXTERNAL_CLOCK mode
     if (clock_mode == EXTERNAL_CLOCK) {
         // Tick Phase-lock
@@ -194,24 +202,34 @@ void uClockClass::handleInternalClock()
             }
         }
 
-        // any external interval avaliable to start sync timer?
-        if (ext_interval > 0) {
-            counter = ext_interval;
-            sync_interval = clock_diff(ext_clock_us, micros());
-
-            // phase-multiplier interval
-            if (int_clock_tick <= ext_clock_tick) {
-                counter -= (sync_interval * PHASE_FACTOR) >> 8;
-            } else {
-                if (counter > sync_interval) {
-                    counter += ((counter - sync_interval) * PHASE_FACTOR) >> 8;
+        // use buffer average for stable tempo estimation; raw ext_interval can be corrupted by USB bursts
+        {
+            uint32_t avg_interval = 0;
+            uint8_t valid = 0;
+            for (uint8_t i = 0; i < ext_interval_buffer_size; i++) {
+                if (ext_interval_buffer[i] > 0) {
+                    avg_interval += ext_interval_buffer[i];
+                    valid++;
                 }
             }
+            if (valid > 0) {
+                counter = avg_interval / valid;
+                sync_interval = clock_diff(ext_clock_us, micros());
 
-            external_tempo = constrainBpm(freqToBpm(counter));
-            if (external_tempo != tempo) {
-                tempo = external_tempo;
-                uClockSetTimerTempo(tempo);
+                // phase-multiplier interval
+                if (int_clock_tick <= ext_clock_tick) {
+                    counter -= (sync_interval * PHASE_FACTOR) >> 8;
+                } else {
+                    if (counter > sync_interval) {
+                        counter += ((counter - sync_interval) * PHASE_FACTOR) >> 8;
+                    }
+                }
+
+                external_tempo = constrainBpm(freqToBpm(counter));
+                if (external_tempo != tempo) {
+                    tempo = external_tempo;
+                    uClockSetTimerTempo(tempo);
+                }
             }
         }
     }
@@ -280,8 +298,9 @@ void uClockClass::handleExternalClock()
                 clock_state = STARTED;
             break;
         default:
-            // accumulate interval incomming ticks data for getTempo() smooth reads on slave clock_mode
-            if (ext_interval > 0) {
+            // accumulate interval incoming ticks data for getTempo() smooth reads on slave clock_mode
+            // reject intervals shorter than the minimum valid period at MAX_BPM (filters USB burst packets)
+            if (ext_interval >= (60000000UL / input_ppqn / MAX_BPM)) {
                 ext_interval_buffer[ext_interval_idx] = ext_interval;
                 if(++ext_interval_idx >= ext_interval_buffer_size)
                     ext_interval_idx = 0;
@@ -651,8 +670,8 @@ void uClockClass::resetCounters()
     }
 
     // external bpm read buffer
-    //for (uint8_t i=0; i < ext_interval_buffer_size; i++)
-    //    ext_interval_buffer[i] = 0;
+    for (uint8_t i=0; i < ext_interval_buffer_size; i++)
+       ext_interval_buffer[i] = 0;
 }
 
 void uClockClass::tap()
