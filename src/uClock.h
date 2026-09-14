@@ -87,6 +87,7 @@ class uClockClass {
         };
 
         ClockState clock_state = STOPED;
+        bool tick_immediately = false;
 
         uClockClass();
         ~uClockClass();

@@ -27,6 +27,9 @@
  */
 #include "uClock.h"
 
+#define UCLOCK_ENABLE_IMMEDIATE_TICK
+#define UCLOCK_ENABLE_BUFFER_AVERAGE
+
 //
 // Compile time selection of Platform implementation of timer setup/control/handler
 //
@@ -175,16 +178,26 @@ void uClockClass::handleInternalClock()
 
     // tick phase lock and external tempo match for EXTERNAL_CLOCK mode
     if (clock_mode == EXTERNAL_CLOCK) {
-        // Tick Phase-lock
-        if (labs(int_clock_tick - ext_clock_tick) > 1) {
+        // check for strict external mode -- don't progress if external clock hasn't caught up with internal clock
+        if (!tick_immediately && !uClock.allowTick())
+            return;
 
-            // check for strict external mode -- don't progress if external clock hasn't caught up with internal clock
-            if (!uClock.allowTick())
-                return;
+        // Tick Phase-lock
+        if (
+            // tick_immediately || 
+            (int_clock_tick - ext_clock_tick) > 1
+        ) {
+
+            int mod_amount = 0; //(output_ppqn*phase_lock_quarters)/4;
 
             // only update tick at a full quarter or phase_lock_quarters * a quarter
             // how many quarters to count until we phase-lock?
-            if ((ext_clock_tick * mod_clock_ref) % (output_ppqn*phase_lock_quarters) == 0) {
+            if (
+                // tick_immediately || 
+                ((ext_clock_tick * mod_clock_ref) % (output_ppqn*phase_lock_quarters)) == mod_amount
+            ) {
+                Serial.printf("uClock: handleInternalClock() advancing ticks: tick_immediately=%d, ext_clock_tick=%u, int_clock_tick=%u, mod_clock_ref=%u, phase_lock_quarters=%u\n", tick_immediately, ext_clock_tick, int_clock_tick, mod_clock_ref, phase_lock_quarters);
+                // tick_immediately = false;
                 tick = ext_clock_tick * mod_clock_ref;
                 int_clock_tick = ext_clock_tick;
                 // update any counter reference to lock with int_clock_tick
@@ -199,40 +212,53 @@ void uClockClass::handleInternalClock()
                         sync_callbacks[i].mod_counter = 0;
                     }
                 }
+            } else {
+                Serial.printf("uClock: handleInternalClock() not advancing ticks: tick_immediately=%d, ext_clock_tick=%u, int_clock_tick=%u, mod_clock_ref=%u, phase_lock_quarters=%u\n", tick_immediately, ext_clock_tick, int_clock_tick, mod_clock_ref, phase_lock_quarters);
             }
+        } else {
+            Serial.printf("uClock: handleInternalClock() not advancing ticks: tick_immediately=%d, ext_clock_tick=%u, int_clock_tick=%u\n", tick_immediately, ext_clock_tick, int_clock_tick);
         }
 
-        // use buffer average for stable tempo estimation; raw ext_interval can be corrupted by USB bursts
-        {
-            uint32_t avg_interval = 0;
-            uint8_t valid = 0;
-            for (uint8_t i = 0; i < ext_interval_buffer_size; i++) {
-                if (ext_interval_buffer[i] > 0) {
-                    avg_interval += ext_interval_buffer[i];
-                    valid++;
-                }
-            }
-            if (valid > 0) {
-                counter = avg_interval / valid;
-                sync_interval = clock_diff(ext_clock_us, micros());
-
-                // phase-multiplier interval
-                if (int_clock_tick <= ext_clock_tick) {
-                    counter -= (sync_interval * PHASE_FACTOR) >> 8;
-                } else {
-                    if (counter > sync_interval) {
-                        counter += ((counter - sync_interval) * PHASE_FACTOR) >> 8;
+        #ifdef UCLOCK_ENABLE_BUFFER_AVERAGE
+            // use buffer average for stable tempo estimation; raw ext_interval can be corrupted by USB bursts
+            {
+                uint32_t avg_interval = 0;
+                uint8_t valid = 0;
+                for (uint8_t i = 0; i < ext_interval_buffer_size; i++) {
+                    if (ext_interval_buffer[i] > 0) {
+                        avg_interval += ext_interval_buffer[i];
+                        valid++;
                     }
                 }
+                if (valid > 0) {
+                    counter = avg_interval / valid;
+                    sync_interval = clock_diff(ext_clock_us, micros());
 
-                external_tempo = constrainBpm(freqToBpm(counter));
-                if (external_tempo != tempo) {
-                    tempo = external_tempo;
-                    uClockSetTimerTempo(tempo);
+                    // phase-multiplier interval
+                    if (int_clock_tick <= ext_clock_tick) {
+                        counter -= (sync_interval * PHASE_FACTOR) >> 8;
+                    } else {
+                        if (counter > sync_interval) {
+                            counter += ((counter - sync_interval) * PHASE_FACTOR) >> 8;
+                        }
+                    }
+
+                    external_tempo = constrainBpm(freqToBpm(counter));
+                    if (external_tempo != tempo) {
+                        tempo = external_tempo;
+                        uClockSetTimerTempo(tempo);
+                    }
                 }
             }
-        }
+        #endif
     }
+
+    if (clock_mode == EXTERNAL_CLOCK) {
+        // check for strict external mode -- don't progress if external clock hasn't caught up with internal clock
+        if (!tick_immediately && !uClock.allowTick())
+            return;
+    }
+    tick_immediately = false;
 
     // main input clock counter control
     if (mod_clock_counter == mod_clock_ref)
@@ -338,6 +364,10 @@ void uClockClass::handleExternalClock()
             break;
     }
 
+    #ifdef UCLOCK_ENABLE_IMMEDIATE_TICK
+        tick_immediately = true;
+    #endif
+
     // for debug usage while developing any application under uClock
     --ext_overflow_counter;
 }
@@ -359,7 +389,7 @@ bool uClockClass::allowTick()
 {
     if (getClockMode()==ClockMode::EXTERNAL_CLOCK && isStrictExternalMode())
         // in strict mode and external, so only allow internal clock to tick if external clock has already been received
-        return ext_clock_tick > int_clock_tick;
+        return ext_clock_tick >= (int_clock_tick-1);
     // in internal clock mode or non-strict external clock mode, always allow internal clock to tick
     return true;
 }
@@ -437,8 +467,12 @@ void uClockClass::stepSeqTick()
         if (!tracks[track].shuffle.tmplt.active) {
             if (tracks[track].mod_step_counter == 0)
                 stepProcess = true;
+            else
+                Serial.printf("\tSkipping step for track %u at mod step counter %u, mod step ref is %u\n", track, tracks[track].mod_step_counter, mod_step_ref);
         } else if (processShuffle(track)) {
             stepProcess = true;
+        } else {
+            Serial.printf("\tSkipping step for track %u due to shuffle processing\n", track);
         }
 
         if (stepProcess) {
