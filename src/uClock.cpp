@@ -27,7 +27,7 @@
  */
 #include "uClock.h"
 
-#define UCLOCK_ENABLE_IMMEDIATE_TICK
+// #define UCLOCK_ENABLE_IMMEDIATE_TICK
 #define UCLOCK_ENABLE_BUFFER_AVERAGE
 
 //
@@ -169,12 +169,12 @@ void uClockClass::handleInternalClock()
         return;
 
     // Watchdog: stop musical clock if no external pulse received for 1 second
-    if (clock_mode == EXTERNAL_CLOCK && clock_state == STARTED && ext_clock_us > 0) {
-        if (clock_diff(ext_clock_us, micros()) > 1000000UL) {
-            clock_state = PAUSED;
-            return;
-        }
-    }
+    // if (clock_mode == EXTERNAL_CLOCK && clock_state == STARTED && ext_clock_us > 0) {
+    //     if (clock_diff(ext_clock_us, micros()) > 1000000UL) {
+    //         clock_state = PAUSED;
+    //         return;
+    //     }
+    // }
 
     // tick phase lock and external tempo match for EXTERNAL_CLOCK mode
     if (clock_mode == EXTERNAL_CLOCK) {
@@ -185,7 +185,7 @@ void uClockClass::handleInternalClock()
         // Tick Phase-lock
         if (
             // tick_immediately || 
-            (int_clock_tick - ext_clock_tick) > 1
+            labs(int_clock_tick - ext_clock_tick) > 1
         ) {
 
             int mod_amount = 0; //(output_ppqn*phase_lock_quarters)/4;
@@ -248,6 +248,27 @@ void uClockClass::handleInternalClock()
                         tempo = external_tempo;
                         uClockSetTimerTempo(tempo);
                     }
+                }
+            }
+        #else
+            // any external interval avaliable to start sync timer?
+            if (ext_interval > 0) {
+                counter = ext_interval;
+                sync_interval = clock_diff(ext_clock_us, micros());
+
+                // phase-multiplier interval
+                if (int_clock_tick <= ext_clock_tick) {
+                    counter -= (sync_interval * PHASE_FACTOR) >> 8;
+                } else {
+                    if (counter > sync_interval) {
+                        counter += ((counter - sync_interval) * PHASE_FACTOR) >> 8;
+                    }
+                }
+
+                external_tempo = constrainBpm(freqToBpm(counter));
+                if (external_tempo != tempo) {
+                    tempo = external_tempo;
+                    uClockSetTimerTempo(tempo);
                 }
             }
         #endif
