@@ -179,8 +179,8 @@ void uClockClass::handleInternalClock()
     // tick phase lock and external tempo match for EXTERNAL_CLOCK mode
     if (clock_mode == EXTERNAL_CLOCK) {
         // check for strict external mode -- don't progress if external clock hasn't caught up with internal clock
-        if (!tick_immediately && !uClock.allowTick())
-            return;
+        // if (!tick_immediately && !uClock.allowTick())
+        //     return;
 
         // Tick Phase-lock
         if (
@@ -274,12 +274,12 @@ void uClockClass::handleInternalClock()
         #endif
     }
 
-    if (clock_mode == EXTERNAL_CLOCK) {
-        // check for strict external mode -- don't progress if external clock hasn't caught up with internal clock
-        if (!tick_immediately && !uClock.allowTick())
-            return;
-    }
-    tick_immediately = false;
+    // if (clock_mode == EXTERNAL_CLOCK) {
+    //     // check for strict external mode -- don't progress if external clock hasn't caught up with internal clock
+    //     if (!tick_immediately && !uClock.allowTick())
+    //         return;
+    // }
+    // tick_immediately = false;
 
     // main input clock counter control
     if (mod_clock_counter == mod_clock_ref)
@@ -339,6 +339,7 @@ void uClockClass::handleExternalClock()
         case STARTING:
             clock_state = SYNCING;
             start_sync_counter = MINIMUM_SYNC_COUNTER;
+            handleInternalClock();
             break;
         case SYNCING:
             // Accumulate valid intervals during SYNCING so the PLL buffer has real

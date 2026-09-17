@@ -206,7 +206,7 @@ class uClockClass {
         
         void resetCounters();
 
-    private:
+    // private:
         float inline freqToBpm(uint32_t freq);
         float inline constrainBpm(float bpm);
         void calculateReferencedata();
