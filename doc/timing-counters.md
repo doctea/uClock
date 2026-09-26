@@ -143,6 +143,43 @@ configured quarter-note boundary. A correction is discontinuous: callbacks
 must be diagnosed using the state immediately before and after it rather than
 assuming `tick` always increases by exactly one.
 
+### Strict external pulse ownership
+
+With strict external mode enabled, each input pulse authorizes exactly
+`mod_clock_ref` output ticks. At 24 PPQN input and 96 PPQN output, one MIDI
+Clock pulse therefore owns four output ticks. The pulse handler completes any
+still-pending subdivisions from the previous group, grants the next group, and
+processes its pulse-aligned boundary immediately. Timer callbacks may process
+the remaining subdivisions, but cannot enter the next group before another
+external pulse arrives.
+
+This makes callback positions monotonic and removes the need for hard
+quarter-note counter reconstruction in strict mode. Hard reconstruction can
+move callback indices backward or forward, replaying or skipping musical
+events. Non-strict external mode retains the legacy phase-correction behavior.
+
+If pulses disappear, already authorized subdivisions may complete and then
+the clock waits without entering `PAUSED` or `STOPED`. Song position and the
+logical playing state are preserved. `isExternalClockStalled()` becomes true
+after four accepted pulse periods (with a 20 ms minimum), and a later pulse
+resumes from the next logical tick.
+
+A gap classified as a discontinuity is not added to the tempo average. The
+interval buffer is cleared and the last good tempo is retained until a normal
+interval arrives. Strict-mode tempo updates occur once per accepted external
+pulse rather than once per internal timer callback.
+
+External pulse timestamps are supplied by the selected platform. The default
+implementation uses `micros()`. Teensy 4 uses its free-running DWT cycle
+counter because globally disabled interrupts can delay SysTick accounting and
+make `micros()` undercount. Define `UCLOCK_EXTERNAL_CLOCK_USE_MICROS` to force
+the legacy source for an A/B build.
+
+MIDI Start remains a transport reset to tick zero. MIDI Continue resumes the
+preserved local position. MIDI Clock alone contains no song-position data, so
+after a disconnection uClock cannot infer that the sender moved to another bar;
+that requires a new Start or MIDI Song Position Pointer support.
+
 ## Overflow counters
 
 `int_overflow_counter` and `ext_overflow_counter` are handler nesting-depth
@@ -172,6 +209,14 @@ per-track modulo-phase divergence, and handler re-entry. A `shuffle_change`
 record stores the template index in `step`, the new offset in `sh`, and the
 previous offset in `value`. A `shuffle_state` record stores the new enabled
 state in `sh` and the previous state in `value`.
+
+Define `UCLOCK_TRACE_EXTERNAL_CLOCK_TIMING` with `UCLOCK_ENABLE_TRACE` to emit
+an `external_timing_delta` record after each measured pulse. Its `value` is
+the `micros()` interval minus the platform interval, in microseconds. On a
+platform whose timestamp source is `micros()`, the value is zero. On Teensy 4,
+negative values show time omitted by `micros()` relative to the DWT counter.
+The preceding `external_pulse` value is always the interval selected for tempo
+estimation.
 
 A `TRACE_STEP_PHASE_DIVERGED` event indicates a strong failure because shuffle
 should alter callback time, not the underlying per-track modulo phase.

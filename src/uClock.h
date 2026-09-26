@@ -107,6 +107,10 @@ class uClockClass {
             onOutputPPQNCallback = callback;
         }
 
+        void setOnOutputPPQNEnd(void (*callback)(uint32_t tick)) {
+            onOutputPPQNEndCallback = callback;
+        }
+
         // Register output sync callbacks before init().
         void setOnSync(PPQNResolution resolution, void (*callback)(uint32_t tick));
 
@@ -207,11 +211,16 @@ class uClockClass {
         // interrupt overflow debug
         uint16_t getIntOverflowCounter();
         uint16_t getExtOverflowCounter();
+        bool isExternalClockStalled();
+        uint16_t getExternalTicksRemaining();
+        uint32_t getLastAcceptedExternalInterval();
+        uint32_t getExternalClockPulseAge();
 
 #ifdef UCLOCK_ENABLE_TRACE
         enum TraceEventType : uint8_t {
             TRACE_START,
             TRACE_EXTERNAL_PULSE,
+            TRACE_EXTERNAL_TIMING_DELTA,
             TRACE_PHASE_ERROR,
             TRACE_PHASE_LOCK,
             TRACE_TEMPO_CHANGE,
@@ -221,6 +230,9 @@ class uClockClass {
             TRACE_SHUFFLE_STATE,
             TRACE_INTERNAL_REENTRY,
             TRACE_EXTERNAL_REENTRY,
+            TRACE_EXTERNAL_STALLED,
+            TRACE_EXTERNAL_RESUMED,
+            TRACE_EXTERNAL_CATCH_UP,
             TRACE_INVALID_STATE
         };
 
@@ -258,6 +270,7 @@ class uClockClass {
 
         // callbacks
         void (*onOutputPPQNCallback)(uint32_t tick) = nullptr;
+        void (*onOutputPPQNEndCallback)(uint32_t tick) = nullptr;
         void (*onClockStartCallback)() = nullptr;
         void (*onClockStopCallback)() = nullptr;
         void (*onClockPauseCallback)() = nullptr;
@@ -323,10 +336,14 @@ class uClockClass {
 
         // external clock control
         volatile uint32_t ext_clock_us = 0;
+        uint32_t ext_clock_timestamp = 0;
         volatile uint32_t ext_clock_tick = 0;
         volatile uint32_t ext_interval = 0;
         volatile float external_tempo = tempo;
         uint8_t phase_lock_quarters = 1;
+        volatile uint16_t external_ticks_remaining = 0;
+        volatile bool external_clock_stalled = false;
+        volatile uint32_t last_accepted_external_interval = 0;
 
         // debug interrupts overflow
         volatile uint16_t int_overflow_counter = 0;
@@ -345,6 +362,9 @@ class uClockClass {
                 int8_t shuffle_value = 0, int16_t shuffle_target = -1,
                 int32_t value = 0);
     #endif
+
+        uint32_t getExternalClockStallTimeout();
+        void updateExternalTempo(uint32_t interval);
 
         // StepSeq extension
         // main stepseq tick processor
