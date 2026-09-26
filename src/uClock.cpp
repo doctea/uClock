@@ -157,6 +157,7 @@ void uClockClass::init()
     calculateReferencedata();
     // initialize hardware timer
     uClockInitTimer();
+    initialized = true;
     // first interval calculus
     setTempo(tempo);
 }
@@ -320,7 +321,7 @@ void uClockClass::handleInternalClock()
     // tick_immediately = false;
 
     // main input clock counter control
-    if (mod_clock_counter == mod_clock_ref)
+    if (mod_clock_counter >= mod_clock_ref)
         mod_clock_counter = 0;
     // process internal clock signal
     // int_clock_tick is the internal clock reference. mainly used for external clock phase lock
@@ -330,7 +331,7 @@ void uClockClass::handleInternalClock()
 
     // sync callbacks
     for (uint8_t i = 0; i < sync_callback_size; i++) {
-        if (sync_callbacks[i].mod_counter == sync_callbacks[i].sync_ref)
+        if (sync_callbacks[i].mod_counter >= sync_callbacks[i].sync_ref)
             sync_callbacks[i].mod_counter = 0;
         if (sync_callbacks[i].mod_counter == 0) {
             sync_callbacks[i].callback(sync_callbacks[i].tick);
@@ -539,7 +540,7 @@ void uClockClass::stepSeqTick()
 {
     for (uint8_t track=0; track < track_slots_size; track++) {
         bool stepProcess = false;
-        if (tracks[track].mod_step_counter == mod_step_ref)
+        if (tracks[track].mod_step_counter >= mod_step_ref)
             tracks[track].mod_step_counter = 0;
         if (!tracks[track].shuffle.tmplt.active) {
             if (tracks[track].mod_step_counter == 0)
@@ -789,17 +790,16 @@ void uClockClass::setInputPPQN(PPQNResolution resolution)
 }
 
 void uClockClass::setOnSync(PPQNResolution resolution, void (*callback)(uint32_t tick)) {
-    // sets sync callback only if the resolution is lower or equal main clock rate
-    if (resolution > output_ppqn || callback == nullptr)
+    // Callback storage is immutable once the timer can access it.
+    if (initialized || resolution > output_ppqn || callback == nullptr)
         return;
 
-    // alloc once and forever policy!
-   	// reallocate by creating a new array, copying data, and deleting the old one
-   	SyncCallback * new_sync_callbacks = new SyncCallback[sync_callback_size+1];
-   	if (sync_callbacks != nullptr) {
-		memcpy(new_sync_callbacks, sync_callbacks, sizeof(SyncCallback) * sync_callback_size);
-  		delete[] sync_callbacks;
-   	}
+    SyncCallback * new_sync_callbacks = new SyncCallback[sync_callback_size + 1];
+    if (sync_callbacks != nullptr) {
+        memcpy(new_sync_callbacks, sync_callbacks,
+               sizeof(SyncCallback) * sync_callback_size);
+        delete[] sync_callbacks;
+    }
     new_sync_callbacks[sync_callback_size].callback = callback;
     new_sync_callbacks[sync_callback_size].resolution = resolution;
     new_sync_callbacks[sync_callback_size].sync_ref = output_ppqn / resolution;

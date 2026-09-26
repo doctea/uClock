@@ -63,19 +63,44 @@ void tearDown()
 static void test_sync_callback_growth_preserves_existing_entries()
 {
     umodular::clock::uClockClass clock;
-    clock.init();
     clock.setOnSync(umodular::clock::uClockClass::PPQN_24, record_sync_24);
     clock.setOnSync(umodular::clock::uClockClass::PPQN_4, record_sync_4);
+    clock.init();
 
     TEST_ASSERT_EQUAL_UINT8(2, clock.sync_callback_size);
     TEST_ASSERT_EQUAL_UINT16(4, clock.sync_callbacks[0].sync_ref);
     TEST_ASSERT_EQUAL_UINT16(24, clock.sync_callbacks[1].sync_ref);
+
+    clock.setOnSync(umodular::clock::uClockClass::PPQN_1, record_sync_4);
+    TEST_ASSERT_EQUAL_UINT8(2, clock.sync_callback_size);
 
     clock.clock_state = umodular::clock::uClockClass::STARTED;
     run_until_tick(clock, 8);
 
     TEST_ASSERT_EQUAL_UINT32(2, sync_24_count);
     TEST_ASSERT_EQUAL_UINT32(1, sync_4_count);
+}
+
+static void test_reduced_ppqn_recovers_counters_above_new_references()
+{
+    umodular::clock::uClockClass clock;
+    callback_clock = &clock;
+    clock.setOnStep(record_step);
+    clock.setOnSync(umodular::clock::uClockClass::PPQN_24, record_sync_24);
+    clock.init();
+    clock.mod_clock_counter = 3;
+    clock.tracks[0].mod_step_counter = 20;
+    clock.sync_callbacks[0].mod_counter = 3;
+
+    clock.setOutputPPQN(umodular::clock::uClockClass::PPQN_48);
+    clock.clock_state = umodular::clock::uClockClass::STARTED;
+    run_until_tick(clock, 1);
+
+    TEST_ASSERT_EQUAL_UINT16(1, clock.mod_clock_counter);
+    TEST_ASSERT_EQUAL_UINT8(1, clock.tracks[0].mod_step_counter);
+    TEST_ASSERT_EQUAL_UINT16(1, clock.sync_callbacks[0].mod_counter);
+    TEST_ASSERT_EQUAL_UINT32(1, sync_24_count);
+    TEST_ASSERT_EQUAL_UINT32(1, fired_steps.size());
 }
 
 static void test_mid_cycle_shuffle_activation_does_not_add_a_step()
@@ -94,6 +119,8 @@ static void test_mid_cycle_shuffle_activation_does_not_add_a_step()
 
     const uint32_t expected_steps[] = {0, 1};
     const uint32_t expected_ticks[] = {0, 16};
+    TEST_ASSERT_EQUAL_UINT32(2, fired_steps.size());
+    TEST_ASSERT_EQUAL_UINT32(2, fired_ticks.size());
     TEST_ASSERT_EQUAL_UINT32_ARRAY(expected_steps, fired_steps.data(), 2);
     TEST_ASSERT_EQUAL_UINT32_ARRAY(expected_ticks, fired_ticks.data(), 2);
 }
@@ -117,6 +144,8 @@ static void test_live_shuffle_update_preserves_latched_step()
 
     const uint32_t expected_steps[] = {0, 1, 2};
     const uint32_t expected_ticks[] = {8, 16, 56};
+    TEST_ASSERT_EQUAL_UINT32(3, fired_steps.size());
+    TEST_ASSERT_EQUAL_UINT32(3, fired_ticks.size());
     TEST_ASSERT_EQUAL_UINT32_ARRAY(expected_steps, fired_steps.data(), 3);
     TEST_ASSERT_EQUAL_UINT32_ARRAY(expected_ticks, fired_ticks.data(), 3);
 }
@@ -150,6 +179,7 @@ int main(int, char **)
 {
     UNITY_BEGIN();
     RUN_TEST(test_sync_callback_growth_preserves_existing_entries);
+    RUN_TEST(test_reduced_ppqn_recovers_counters_above_new_references);
     RUN_TEST(test_mid_cycle_shuffle_activation_does_not_add_a_step);
     RUN_TEST(test_live_shuffle_update_preserves_latched_step);
     RUN_TEST(test_trace_freezes_after_first_anomaly);

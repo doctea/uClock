@@ -107,7 +107,7 @@ class uClockClass {
             onOutputPPQNCallback = callback;
         }
 
-        // multiple output sync clock signatures callback register
+        // Register output sync callbacks before init().
         void setOnSync(PPQNResolution resolution, void (*callback)(uint32_t tick));
 
         void setOnClockStart(void (*callback)()) {
@@ -303,6 +303,7 @@ class uClockClass {
         // sync callback data
         SyncCallback * sync_callbacks = nullptr;
         uint8_t sync_callback_size = 0;
+        bool initialized = false;
 
         // clock core
         // input/output tick resolution
