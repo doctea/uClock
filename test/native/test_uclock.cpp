@@ -168,6 +168,31 @@ static void test_strict_external_clock_allows_only_one_output_group_per_pulse()
     TEST_ASSERT_EQUAL_UINT32(1, sync_24_count);
 }
 
+static void test_back_to_back_external_pulses_preserve_both_output_groups()
+{
+    umodular::clock::uClockClass clock;
+    clock.setClockMode(umodular::clock::uClockClass::EXTERNAL_CLOCK);
+    clock.setStrictExternalMode(true);
+    clock.setOnSync(umodular::clock::uClockClass::PPQN_24, record_sync_24);
+    clock.init();
+    clock.start();
+
+    fake_micros = 1000;
+    clock.clockMe();
+    clock.clockMe();
+
+    TEST_ASSERT_EQUAL_UINT32(2, clock.ext_clock_tick);
+    TEST_ASSERT_EQUAL_UINT32(5, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(2, sync_24_count);
+    TEST_ASSERT_EQUAL_UINT16(3, clock.getExternalTicksRemaining());
+
+    for (uint8_t i = 0; i < 10; i++)
+        clock.handleInternalClock();
+
+    TEST_ASSERT_EQUAL_UINT32(8, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(2, sync_24_count);
+}
+
 static void test_reentrant_internal_callback_does_not_advance_twice()
 {
     umodular::clock::uClockClass clock;
@@ -415,6 +440,7 @@ int main(int, char **)
     RUN_TEST(test_reduced_ppqn_recovers_counters_above_new_references);
     RUN_TEST(test_output_tick_end_runs_after_sync_and_step_callbacks);
     RUN_TEST(test_strict_external_clock_allows_only_one_output_group_per_pulse);
+    RUN_TEST(test_back_to_back_external_pulses_preserve_both_output_groups);
     RUN_TEST(test_reentrant_internal_callback_does_not_advance_twice);
     RUN_TEST(test_external_tempo_ignores_short_startup_interval);
     RUN_TEST(test_early_external_pulse_catches_up_without_skipping_callbacks);

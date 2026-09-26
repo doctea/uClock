@@ -1,6 +1,7 @@
 #include <Arduino.h>
+#include <util/atomic.h>
 
-#define ATOMIC(X) noInterrupts(); X; interrupts();
+#define ATOMIC(X) ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { X; }
 
 #if defined(__IMXRT1062__)
     #define UCLOCK_HAS_PLATFORM_EXTERNAL_CLOCK_TIMESTAMP
