@@ -170,7 +170,7 @@ class uClockClass {
         bool isShuffled(uint8_t track = 0);
         void setShuffleSize(uint8_t size, uint8_t track = 0);
         void setShuffleData(uint8_t step, int8_t tick, uint8_t track = 0);
-        void setShuffleTemplate(int8_t * shuff, uint8_t size, uint8_t track = 0);
+        void setShuffleTemplate(const int8_t * shuff, uint8_t size, uint8_t track = 0);
         // use this to know how many positive or negative ticks to add to current note length
         int8_t getShuffleLength(uint8_t track = 0);
 
@@ -244,6 +244,7 @@ class uClockClass {
         bool popTraceEvent(TraceEvent &event);
         void clearTrace();
         uint32_t getTraceDroppedCount();
+        bool isTraceFrozen();
 #endif
 
         uint32_t bpmToMicroSeconds(float bpm);
@@ -287,7 +288,7 @@ class uClockClass {
             //int8_t shift = 0;
             //uint8_t direction = 0;
             uint32_t step_counter = 0;
-            uint8_t mod_step_counter;
+            uint8_t mod_step_counter = 0;
         } TRACK_SLOT;
         
         // sync callback structure for dynamic multiple sync outputs support
@@ -335,6 +336,7 @@ class uClockClass {
         volatile uint16_t trace_head = 0;
         volatile uint16_t trace_tail = 0;
         volatile uint32_t trace_dropped = 0;
+        volatile bool trace_frozen = false;
         bool trace_phase_error_active = false;
 
         void traceEvent(TraceEventType type, uint8_t track = UINT8_MAX,

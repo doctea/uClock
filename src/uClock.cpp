@@ -142,6 +142,10 @@ uClockClass::~uClockClass()
 
     if (tracks)
         delete[] tracks;
+
+#ifdef UCLOCK_ENABLE_TRACE
+    delete[] trace_events;
+#endif
 }
 
 void uClockClass::init()
@@ -647,18 +651,32 @@ void uClockClass::setShuffleData(uint8_t step, int8_t tick, uint8_t track)
         )
 }
 
-void uClockClass::setShuffleTemplate(int8_t * shuff, uint8_t size, uint8_t track)
+void uClockClass::setShuffleTemplate(const int8_t * shuff, uint8_t size, uint8_t track)
 {
     if (tracks == nullptr || track >= track_slots_size || shuff == nullptr || size == 0)
         return;
 
-    //uint8_t size = sizeof(shuff) / sizeof(shuff[0]);
     if (size > MAX_SHUFFLE_TEMPLATE_SIZE)
         size = MAX_SHUFFLE_TEMPLATE_SIZE;
-    ATOMIC(tracks[track].shuffle.tmplt.size = size)
-    for (uint8_t i=0; i < size; i++) {
-        setShuffleData(i, shuff[i], track);
+    for (uint8_t i = 0; i < size; i++) {
+        if (shuff[i] <= -(int16_t)mod_step_ref || shuff[i] >= (int16_t)mod_step_ref)
+            return;
     }
+
+    ATOMIC(
+        tracks[track].shuffle.tmplt.size = size;
+        for (uint8_t i = 0; i < size; i++) {
+#ifdef UCLOCK_ENABLE_TRACE
+            int8_t previous = tracks[track].shuffle.tmplt.step[i];
+#endif
+            tracks[track].shuffle.tmplt.step[i] = shuff[i];
+#ifdef UCLOCK_ENABLE_TRACE
+            if (previous != shuff[i])
+                traceEvent(TRACE_SHUFFLE_CHANGE, track, i,
+                           tracks[track].mod_step_counter, shuff[i], -1, previous);
+#endif
+        }
+    )
 }
 
 int8_t uClockClass::getShuffleLength(uint8_t track)
@@ -772,21 +790,21 @@ void uClockClass::setInputPPQN(PPQNResolution resolution)
 
 void uClockClass::setOnSync(PPQNResolution resolution, void (*callback)(uint32_t tick)) {
     // sets sync callback only if the resolution is lower or equal main clock rate
-    if (resolution > output_ppqn)
+    if (resolution > output_ppqn || callback == nullptr)
         return;
 
     // alloc once and forever policy!
    	// reallocate by creating a new array, copying data, and deleting the old one
    	SyncCallback * new_sync_callbacks = new SyncCallback[sync_callback_size+1];
    	if (sync_callbacks != nullptr) {
-  		memcpy(new_sync_callbacks, sync_callbacks, sizeof(SyncCallback) * (sync_callback_size+1));
+		memcpy(new_sync_callbacks, sync_callbacks, sizeof(SyncCallback) * sync_callback_size);
   		delete[] sync_callbacks;
    	}
+    new_sync_callbacks[sync_callback_size].callback = callback;
+    new_sync_callbacks[sync_callback_size].resolution = resolution;
+    new_sync_callbacks[sync_callback_size].sync_ref = output_ppqn / resolution;
+
     sync_callbacks = new_sync_callbacks;
-
-    sync_callbacks[sync_callback_size].callback = callback;
-    sync_callbacks[sync_callback_size].resolution = resolution;
-
     ++sync_callback_size;
 }
 
@@ -888,6 +906,11 @@ void uClockClass::traceEvent(TraceEventType type, uint8_t track, uint32_t step,
                              uint16_t step_phase, int8_t shuffle_value,
                              int16_t shuffle_target, int32_t value)
 {
+    if (trace_frozen) {
+        ++trace_dropped;
+        return;
+    }
+
     uint16_t head = trace_head;
     TraceEvent &event = trace_events[head];
     event.timestamp_us = micros();
@@ -913,6 +936,10 @@ void uClockClass::traceEvent(TraceEventType type, uint8_t track, uint32_t step,
         ++trace_dropped;
     }
     trace_head = next;
+
+    if (type == TRACE_STEP_PHASE_DIVERGED || type == TRACE_INTERNAL_REENTRY ||
+        type == TRACE_EXTERNAL_REENTRY || type == TRACE_INVALID_STATE)
+        trace_frozen = true;
 }
 
 bool uClockClass::popTraceEvent(TraceEvent &event)
@@ -934,6 +961,7 @@ void uClockClass::clearTrace()
         trace_head = 0;
         trace_tail = 0;
         trace_dropped = 0;
+        trace_frozen = false;
     )
 }
 
@@ -942,6 +970,13 @@ uint32_t uClockClass::getTraceDroppedCount()
     uint32_t dropped = 0;
     ATOMIC(dropped = trace_dropped)
     return dropped;
+}
+
+bool uClockClass::isTraceFrozen()
+{
+    bool frozen = false;
+    ATOMIC(frozen = trace_frozen)
+    return frozen;
 }
 #endif
 

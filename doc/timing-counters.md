@@ -154,13 +154,16 @@ record such re-entry without formatting or serial output in the timing path.
 ## Structured trace
 
 Define `UCLOCK_ENABLE_TRACE` to enable the fixed-size trace ring. Override
-`UCLOCK_TRACE_BUFFER_SIZE` if the default 128 records is unsuitable.
+`UCLOCK_TRACE_BUFFER_SIZE` if the default 8192 records is unsuitable.
 
 The producer performs no allocation, string formatting, or serial I/O. Call
 `popTraceEvent()` from non-interrupt code to drain records and
-`getTraceDroppedCount()` to detect overwritten records. When full, the ring
-discards the oldest event so the most recent lead-up to a failure remains
-available.
+`getTraceDroppedCount()` to detect discarded records. During normal operation,
+a full ring discards its oldest event so recent history is retained. The first
+step-phase divergence, handler re-entry, or invalid-state event freezes the
+ring after recording that event. Further producer attempts increment the
+dropped count without overwriting the captured lead-up. `isTraceFrozen()`
+reports this state, and `clearTrace()` clears and re-arms the ring.
 
 Important events include external pulses, the beginning of a phase error,
 phase correction, PLL tempo changes (reported as BPM times 1000), shuffled
@@ -184,5 +187,7 @@ uclocktrace off
 
 Output records begin with `UCLOCK,`. Enable output shortly before attempting a
 reproduction. The main loop drains at most eight records per pass. If the
-`dropped` field increases, the producer overwrote old records before the main
-loop could print them; the newest lead-up to the problem is retained.
+`dropped` field increases while the trace is rolling, old records were
+overwritten before the main loop could print them. While frozen, it counts new
+records rejected to preserve the captured failure. Use `uclocktrace status` to
+distinguish these cases.
