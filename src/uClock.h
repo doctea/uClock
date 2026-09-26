@@ -56,6 +56,12 @@ namespace umodular { namespace clock {
     #define MINIMUM_SYNC_COUNTER 4
 #endif
 
+#ifdef UCLOCK_ENABLE_TRACE
+    #ifndef UCLOCK_TRACE_BUFFER_SIZE
+        #define UCLOCK_TRACE_BUFFER_SIZE 8192
+    #endif
+#endif
+
 class uClockClass {
 
     public:
@@ -202,6 +208,44 @@ class uClockClass {
         uint16_t getIntOverflowCounter();
         uint16_t getExtOverflowCounter();
 
+#ifdef UCLOCK_ENABLE_TRACE
+        enum TraceEventType : uint8_t {
+            TRACE_START,
+            TRACE_EXTERNAL_PULSE,
+            TRACE_PHASE_ERROR,
+            TRACE_PHASE_LOCK,
+            TRACE_TEMPO_CHANGE,
+            TRACE_STEP_FIRE,
+            TRACE_STEP_PHASE_DIVERGED,
+            TRACE_SHUFFLE_CHANGE,
+            TRACE_SHUFFLE_STATE,
+            TRACE_INTERNAL_REENTRY,
+            TRACE_EXTERNAL_REENTRY,
+            TRACE_INVALID_STATE
+        };
+
+        struct TraceEvent {
+            uint32_t timestamp_us;
+            uint32_t tick;
+            uint32_t int_clock_tick;
+            uint32_t ext_clock_tick;
+            uint32_t step;
+            int32_t value;
+            uint16_t mod_clock_counter;
+            uint16_t mod_step_counter;
+            int16_t shuffle_target;
+            int8_t shuffle_value;
+            uint8_t track;
+            uint8_t type;
+            uint8_t clock_state;
+            uint8_t handler_depth;
+        };
+
+        bool popTraceEvent(TraceEvent &event);
+        void clearTrace();
+        uint32_t getTraceDroppedCount();
+#endif
+
         uint32_t bpmToMicroSeconds(float bpm);
         
         void resetCounters();
@@ -230,7 +274,10 @@ class uClockClass {
         
         typedef struct {
             volatile SHUFFLE_TEMPLATE tmplt;
-            int8_t last_shff = 0; // int8 supports max PPQN_480 of internal clock resolution
+            int8_t current_shff = 0;
+            int8_t previous_shff = 0;
+            bool current_shff_valid = false;
+            bool skip_next_phase_zero = false;
             bool shuffle_shoot_ctrl = true;
             volatile int8_t shuffle_length_ctrl = 0;
         } SHUFFLE_DATA;
@@ -246,7 +293,7 @@ class uClockClass {
         // sync callback structure for dynamic multiple sync outputs support
         struct SyncCallback {
             void (*callback)(uint32_t tick) = nullptr;
-            uint8_t mod_counter = 0;
+            uint16_t mod_counter = 0;
             uint16_t sync_ref = 0;
             uint32_t tick = 0;
             PPQNResolution resolution;
@@ -269,7 +316,7 @@ class uClockClass {
         volatile uint32_t tick = 0;
         volatile uint32_t int_clock_tick = 0;
         uint8_t mod_step_ref = 0;
-        uint8_t mod_clock_counter = 0;
+        uint16_t mod_clock_counter = 0;
         uint16_t mod_clock_ref = 0;
 
         // external clock control
@@ -282,6 +329,19 @@ class uClockClass {
         // debug interrupts overflow
         volatile uint16_t int_overflow_counter = 0;
         volatile uint16_t ext_overflow_counter = 0;
+
+    #ifdef UCLOCK_ENABLE_TRACE
+        TraceEvent *trace_events = new TraceEvent[UCLOCK_TRACE_BUFFER_SIZE];
+        volatile uint16_t trace_head = 0;
+        volatile uint16_t trace_tail = 0;
+        volatile uint32_t trace_dropped = 0;
+        bool trace_phase_error_active = false;
+
+        void traceEvent(TraceEventType type, uint8_t track = UINT8_MAX,
+                uint32_t step = 0, uint16_t mod_step_counter = 0,
+                int8_t shuffle_value = 0, int16_t shuffle_target = -1,
+                int32_t value = 0);
+    #endif
 
         // StepSeq extension
         // main stepseq tick processor
