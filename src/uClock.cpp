@@ -214,6 +214,8 @@ void uClockClass::handleInternalClock()
         return;
     }
 
+    last_internal_tick_us = micros();
+
     // Watchdog: stop musical clock if no external pulse received for 1 second
     // if (clock_mode == EXTERNAL_CLOCK && clock_state == STARTED && ext_clock_us > 0) {
     //     if (clock_diff(ext_clock_us, micros()) > 1000000UL) {
@@ -395,13 +397,47 @@ void uClockClass::handleInternalClock()
         external_ticks_remaining > 0)
         --external_ticks_remaining;
 
+    if (clock_mode == INTERNAL_CLOCK) {
+        uint32_t base_interval = bpmToMicroSeconds(tempo);
+        if (internal_phase_slew_ticks_remaining > 0) {
+            int32_t adjustment = internal_phase_correction_remaining_us /
+                (int32_t)internal_phase_slew_ticks_remaining;
+            if (adjustment == 0 && internal_phase_correction_remaining_us != 0)
+                adjustment = internal_phase_correction_remaining_us > 0 ? 1 : -1;
+
+            int32_t adjusted_interval = (int32_t)base_interval + adjustment;
+            int32_t minimum_interval = (int32_t)base_interval / 2;
+            int32_t maximum_interval = (int32_t)base_interval +
+                (int32_t)base_interval / 2;
+            if (adjusted_interval < minimum_interval)
+                adjusted_interval = minimum_interval;
+            else if (adjusted_interval > maximum_interval)
+                adjusted_interval = maximum_interval;
+
+            adjustment = adjusted_interval - (int32_t)base_interval;
+            internal_phase_correction_remaining_us -= adjustment;
+            --internal_phase_slew_ticks_remaining;
+            setTimer((uint32_t)adjusted_interval);
+            internal_phase_timer_adjusted = true;
+        } else if (internal_phase_timer_adjusted) {
+            setTimer(base_interval);
+            internal_phase_timer_adjusted = false;
+        }
+    }
+
     // for debug usage while developing any application under uClock
     --int_overflow_counter;
 }
 
 void uClockClass::handleExternalClock()
 {
-    static uint32_t now_clock_us = 0;
+    handleExternalClock(micros(), uclockPlatformExternalClockTimestamp(), true);
+}
+
+void uClockClass::handleExternalClock(uint32_t observed_at_us,
+                                      uint32_t platform_timestamp,
+                                      bool platform_timestamp_valid)
+{
     static uint8_t start_sync_counter = 0;
 #if defined(UCLOCK_ENABLE_TRACE) && defined(UCLOCK_TRACE_EXTERNAL_CLOCK_TIMING)
     int32_t external_timing_delta = 0;
@@ -417,26 +453,30 @@ void uClockClass::handleExternalClock()
 #endif
 
     // calculate and store ext_interval
-    now_clock_us = micros();
-    uint32_t now_clock_timestamp = uclockPlatformExternalClockTimestamp();
     if (ext_clock_us > 0) {
-        uint32_t wall_interval = clock_diff(ext_clock_us, now_clock_us);
-        uint32_t platform_interval = uclockPlatformExternalClockIntervalUs(
-            ext_clock_timestamp, now_clock_timestamp);
+        uint32_t wall_interval = clock_diff(ext_clock_us, observed_at_us);
+        uint32_t platform_interval = wall_interval;
+        if (ext_clock_timestamp_valid && platform_timestamp_valid) {
+            platform_interval = uclockPlatformExternalClockIntervalUs(
+                ext_clock_timestamp, platform_timestamp);
+        }
     #if defined(UCLOCK_ENABLE_TRACE) && defined(UCLOCK_TRACE_EXTERNAL_CLOCK_TIMING)
         external_timing_delta = (int32_t)wall_interval - (int32_t)platform_interval;
-        external_timing_delta_valid = true;
+        external_timing_delta_valid = ext_clock_timestamp_valid &&
+            platform_timestamp_valid;
     #endif
 #if defined(UCLOCK_EXTERNAL_CLOCK_USE_MICROS)
         ext_interval = wall_interval;
 #else
-        ext_interval = wall_interval <= getExternalClockStallTimeout()
+        ext_interval = ext_clock_timestamp_valid && platform_timestamp_valid &&
+            wall_interval <= getExternalClockStallTimeout()
             ? platform_interval
             : wall_interval;
 #endif
     }
-    ext_clock_us = now_clock_us;
-    ext_clock_timestamp = now_clock_timestamp;
+    ext_clock_us = observed_at_us;
+    ext_clock_timestamp = platform_timestamp;
+    ext_clock_timestamp_valid = platform_timestamp_valid;
 
     // external clock tick me!
     ext_clock_tick++;
@@ -482,17 +522,16 @@ void uClockClass::handleExternalClock()
             clock_state = STARTED;
 
     #ifdef UCLOCK_ENABLE_TRACE
-        uint16_t catch_up_count = external_ticks_remaining;
+        uint16_t pending_count = external_ticks_remaining;
     #endif
-        while (external_ticks_remaining > 0)
-            handleInternalClock();
+        ATOMIC(
+            external_ticks_remaining = mod_clock_ref;
+        )
 #ifdef UCLOCK_ENABLE_TRACE
-        if (catch_up_count > 0)
+        if (pending_count > 0)
             traceEvent(TRACE_EXTERNAL_CATCH_UP, UINT8_MAX, 0, 0, 0, -1,
-                       catch_up_count);
+                       pending_count);
 #endif
-
-        external_ticks_remaining = mod_clock_ref;
         handleInternalClock();
 
         --ext_overflow_counter;
@@ -567,6 +606,11 @@ void uClockClass::clockMe()
     ATOMIC(handleExternalClock())
 }
 
+void uClockClass::clockMeAt(uint32_t observed_at_us)
+{
+    ATOMIC(handleExternalClock(observed_at_us, 0, false))
+}
+
 void uClockClass::setStrictExternalMode(bool strict) 
 {
     strict_external_mode = strict;
@@ -604,26 +648,34 @@ void uClockClass::updateExternalTempo(uint32_t interval)
     if (++ext_interval_idx >= ext_interval_buffer_size)
         ext_interval_idx = 0;
 
+    uint8_t tempo_window_size = input_ppqn < ext_interval_buffer_size
+        ? input_ppqn
+        : ext_interval_buffer_size;
     uint64_t total = 0;
     uint8_t count = 0;
     uint32_t minimum = UINT32_MAX;
     uint32_t maximum = 0;
-    for (uint8_t i = 0; i < ext_interval_buffer_size; i++) {
-        if (ext_interval_buffer[i] > 0) {
-            total += ext_interval_buffer[i];
-            if (ext_interval_buffer[i] < minimum)
-                minimum = ext_interval_buffer[i];
-            if (ext_interval_buffer[i] > maximum)
-                maximum = ext_interval_buffer[i];
+    for (uint8_t offset = 0; offset < tempo_window_size; offset++) {
+        uint8_t index = (ext_interval_idx + ext_interval_buffer_size - 1 - offset) %
+            ext_interval_buffer_size;
+        uint32_t sample = ext_interval_buffer[index];
+        if (sample > 0) {
+            total += sample;
+            if (sample < minimum)
+                minimum = sample;
+            if (sample > maximum)
+                maximum = sample;
             ++count;
         }
     }
-    if (count < 3)
+    if (count == 0)
         return;
 
-    total -= minimum;
-    total -= maximum;
-    count -= 2;
+    if (count >= 3) {
+        total -= minimum;
+        total -= maximum;
+        count -= 2;
+    }
     external_tempo = constrainBpm(freqToBpm(total / count));
     if (external_tempo != tempo) {
 #ifdef UCLOCK_ENABLE_TRACE
@@ -682,6 +734,20 @@ void uClockClass::pause()
 void uClockClass::setClockMode(ClockMode tempo_mode)
 {
     ATOMIC(
+        if (tempo_mode == EXTERNAL_CLOCK && clock_mode != EXTERNAL_CLOCK) {
+            ext_clock_us = 0;
+            ext_clock_timestamp = 0;
+            ext_clock_timestamp_valid = false;
+            ext_interval = 0;
+            last_accepted_external_interval = 0;
+            external_ticks_remaining = 0;
+            external_clock_stalled = false;
+            ext_interval_idx = 0;
+            if (ext_interval_buffer != nullptr) {
+                for (uint8_t i = 0; i < ext_interval_buffer_size; i++)
+                    ext_interval_buffer[i] = 0;
+            }
+        }
         clock_mode = tempo_mode;
         // trying to set external clock while playing?
         if (clock_mode == EXTERNAL_CLOCK && clock_state == STARTED)
@@ -1006,6 +1072,44 @@ float uClockClass::getTempo()
     return tempo;
 }
 
+bool uClockClass::syncInternalClockToBeat(uint32_t observed_at_us)
+{
+    if (clock_mode != INTERNAL_CLOCK || clock_state != STARTED ||
+        last_internal_tick_us == 0 || output_ppqn == 0)
+        return false;
+
+    uint32_t tick_interval = bpmToMicroSeconds(tempo);
+    uint32_t beat_interval = tick_interval * output_ppqn;
+    uint32_t last_tick = tick > 0 ? tick - 1 : 0;
+    uint32_t elapsed = clock_diff(last_internal_tick_us, observed_at_us);
+    uint32_t phase_us = ((last_tick % output_ppqn) * tick_interval + elapsed) %
+        beat_interval;
+    int32_t correction = phase_us <= beat_interval / 2
+        ? (int32_t)phase_us
+        : (int32_t)phase_us - (int32_t)beat_interval;
+
+    ATOMIC(
+        internal_phase_correction_us = correction;
+        internal_phase_correction_remaining_us = correction;
+        internal_phase_slew_ticks_remaining = output_ppqn;
+    )
+    return true;
+}
+
+int32_t uClockClass::getInternalPhaseCorrectionUs()
+{
+    int32_t correction = 0;
+    ATOMIC(correction = internal_phase_correction_us)
+    return correction;
+}
+
+uint16_t uClockClass::getInternalPhaseSlewTicksRemaining()
+{
+    uint16_t remaining = 0;
+    ATOMIC(remaining = internal_phase_slew_ticks_remaining)
+    return remaining;
+}
+
 float inline uClockClass::freqToBpm(uint32_t freq)
 {
     float usecs = 1/((float)freq/1000000.0);
@@ -1045,10 +1149,16 @@ void uClockClass::resetCounters()
     ext_clock_tick = 0;
     ext_clock_us = 0;
     ext_clock_timestamp = 0;
+    ext_clock_timestamp_valid = false;
     ext_interval = 0;
     external_ticks_remaining = 0;
     external_clock_stalled = false;
     last_accepted_external_interval = 0;
+    last_internal_tick_us = 0;
+    internal_phase_correction_us = 0;
+    internal_phase_correction_remaining_us = 0;
+    internal_phase_slew_ticks_remaining = 0;
+    internal_phase_timer_adjusted = false;
     //ext_interval_idx = 0;
 
     // sync output counters

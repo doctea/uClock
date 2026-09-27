@@ -138,20 +138,24 @@ step_counter = tick / mod_step_ref
 mod_step_counter = 0
 ```
 
-Ongoing external phase correction performs the same reconstruction at a
-configured quarter-note boundary. A correction is discontinuous: callbacks
-must be diagnosed using the state immediately before and after it rather than
-assuming `tick` always increases by exactly one.
+Legacy non-strict external phase correction performs the same reconstruction
+at a configured quarter-note boundary. Strict external mode does not use this
+startup or ongoing reconstruction.
 
 ### Strict external pulse ownership
 
 With strict external mode enabled, each input pulse authorizes exactly
 `mod_clock_ref` output ticks. At 24 PPQN input and 96 PPQN output, one MIDI
-Clock pulse therefore owns four output ticks. The pulse handler completes any
-still-pending subdivisions from the previous group, grants the next group, and
-processes its pulse-aligned boundary immediately. Timer callbacks may process
-the remaining subdivisions, but cannot enter the next group before another
-external pulse arrives.
+Clock pulse therefore owns four output ticks. Still-pending subdivisions remain
+authorized when another pulse arrives, but are processed at timer cadence rather
+than replayed synchronously in the pulse handler. Strict external mode does not
+reconstruct counters; callback positions remain monotonic. The pulse handler
+processes one boundary immediately and timer callbacks process the remaining
+authorized subdivisions. They cannot advance without an external pulse budget.
+
+Lower input rates use the same rule. At 96 PPQN output, one 4-PPQN pulse owns
+24 output ticks and six PPQN-24 callbacks. One 1-PPQN pulse owns 96 output
+ticks and 24 PPQN-24 callbacks.
 
 This makes callback positions monotonic and removes the need for hard
 quarter-note counter reconstruction in strict mode. Hard reconstruction can
@@ -174,6 +178,26 @@ implementation uses `micros()`. Teensy 4 uses its free-running DWT cycle
 counter because globally disabled interrupts can delay SysTick accounting and
 make `micros()` undercount. Define `UCLOCK_EXTERNAL_CLOCK_USE_MICROS` to force
 the legacy source for an A/B build.
+
+Projects that detect an edge before they can safely dispatch it should call
+`clockMeAt(observed_at_us)` later. Tempo estimation then uses the captured edge
+time rather than queue or main-loop latency. `clockMe()` remains the preferred
+immediate path and retains platform-specific timestamp precision. Hardware
+capture, debouncing, interrupt queues, and pulse-width guarantees belong to
+the project adapter rather than uClock.
+
+### Internal tap phase slew
+
+`syncInternalClockToBeat(observed_at_us)` treats a tap as a quarter-note phase
+observation while remaining in internal mode. It selects the nearest beat-grid
+phase error and distributes that correction over the next `output_ppqn` ticks.
+The correction is limited to half of each normal tick interval, so timer
+intervals remain positive. Tick IDs, sync callback counters, track positions,
+shuffle state, and application time-signature offsets are never rewritten.
+
+`getInternalPhaseCorrectionUs()` reports the most recent signed correction and
+`getInternalPhaseSlewTicksRemaining()` reports convergence progress. A later
+tap replaces the remaining correction using the newest tempo and observation.
 
 MIDI Start remains a transport reset to tick zero. MIDI Continue resumes the
 preserved local position. MIDI Clock alone contains no song-position data, so

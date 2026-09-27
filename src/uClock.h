@@ -166,6 +166,9 @@ class uClockClass {
         void pause();
         void setTempo(float bpm);
         float getTempo();
+        bool syncInternalClockToBeat(uint32_t observed_at_us);
+        int32_t getInternalPhaseCorrectionUs();
+        uint16_t getInternalPhaseSlewTicksRemaining();
 
         // Step Seq extension for global and multi track sequences control
         // void setShift(int8_t shift, uint8_t track = 0);
@@ -185,6 +188,7 @@ class uClockClass {
         void setClockMode(ClockMode tempo_mode);
         ClockMode getClockMode();
         void clockMe();
+        void clockMeAt(uint32_t observed_at_us);
 
         // strict external clock mode functions
         bool allowTick();
@@ -326,6 +330,11 @@ class uClockClass {
         volatile ClockMode clock_mode = INTERNAL_CLOCK;
         uint32_t start_timer = 0;
         bool strict_external_mode = false;
+        volatile uint32_t last_internal_tick_us = 0;
+        volatile int32_t internal_phase_correction_us = 0;
+        volatile int32_t internal_phase_correction_remaining_us = 0;
+        volatile uint16_t internal_phase_slew_ticks_remaining = 0;
+        bool internal_phase_timer_adjusted = false;
 
         // output and internal counters, ticks and references
         volatile uint32_t tick = 0;
@@ -337,6 +346,7 @@ class uClockClass {
         // external clock control
         volatile uint32_t ext_clock_us = 0;
         uint32_t ext_clock_timestamp = 0;
+        bool ext_clock_timestamp_valid = false;
         volatile uint32_t ext_clock_tick = 0;
         volatile uint32_t ext_interval = 0;
         volatile float external_tempo = tempo;
@@ -364,6 +374,9 @@ class uClockClass {
     #endif
 
         uint32_t getExternalClockStallTimeout();
+        void handleExternalClock(uint32_t observed_at_us,
+                     uint32_t platform_timestamp,
+                     bool platform_timestamp_valid);
         void updateExternalTempo(uint32_t interval);
 
         // StepSeq extension

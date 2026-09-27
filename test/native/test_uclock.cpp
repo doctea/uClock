@@ -182,15 +182,131 @@ static void test_back_to_back_external_pulses_preserve_both_output_groups()
     clock.clockMe();
 
     TEST_ASSERT_EQUAL_UINT32(2, clock.ext_clock_tick);
-    TEST_ASSERT_EQUAL_UINT32(5, clock.tick);
-    TEST_ASSERT_EQUAL_UINT32(2, sync_24_count);
-    TEST_ASSERT_EQUAL_UINT16(3, clock.getExternalTicksRemaining());
+    TEST_ASSERT_EQUAL_UINT32(2, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(1, sync_24_count);
+    TEST_ASSERT_EQUAL_UINT16(6, clock.getExternalTicksRemaining());
 
     for (uint8_t i = 0; i < 10; i++)
         clock.handleInternalClock();
 
     TEST_ASSERT_EQUAL_UINT32(8, clock.tick);
     TEST_ASSERT_EQUAL_UINT32(2, sync_24_count);
+}
+
+static void assert_low_ppqn_pulse_budget(
+    umodular::clock::uClockClass::PPQNResolution input_ppqn,
+    uint32_t expected_output_ticks,
+    uint32_t expected_sync_ticks)
+{
+    umodular::clock::uClockClass clock;
+    clock.setOutputPPQN(umodular::clock::uClockClass::PPQN_96);
+    clock.setInputPPQN(input_ppqn);
+    clock.setClockMode(umodular::clock::uClockClass::EXTERNAL_CLOCK);
+    clock.setStrictExternalMode(true);
+    clock.setOnSync(umodular::clock::uClockClass::PPQN_24, record_sync_24);
+    clock.init();
+    clock.start();
+
+    fake_micros = 1000;
+    clock.clockMe();
+    while (clock.getExternalTicksRemaining() > 0) {
+        fake_micros += 1000;
+        clock.handleInternalClock();
+    }
+
+    TEST_ASSERT_EQUAL_UINT32(1, clock.ext_clock_tick);
+    TEST_ASSERT_EQUAL_UINT32(expected_output_ticks, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(expected_sync_ticks, sync_24_ticks.size());
+    for (uint32_t index = 0; index < sync_24_ticks.size(); index++)
+        TEST_ASSERT_EQUAL_UINT32(index, sync_24_ticks[index]);
+
+    for (uint8_t attempt = 0; attempt < 10; attempt++)
+        clock.handleInternalClock();
+    TEST_ASSERT_EQUAL_UINT32(expected_output_ticks, clock.tick);
+}
+
+static void test_strict_external_ppqn_4_pulse_authorizes_quarter_group()
+{
+    assert_low_ppqn_pulse_budget(
+        umodular::clock::uClockClass::PPQN_4, 24, 6);
+}
+
+static void test_strict_external_ppqn_1_pulse_authorizes_full_quarter()
+{
+    assert_low_ppqn_pulse_budget(
+        umodular::clock::uClockClass::PPQN_1, 96, 24);
+}
+
+static void test_live_switch_to_ppqn_1_external_clock_keeps_timer_progressing()
+{
+    umodular::clock::uClockClass clock;
+    clock.setOutputPPQN(umodular::clock::uClockClass::PPQN_96);
+    clock.setStrictExternalMode(true);
+    clock.setOnSync(umodular::clock::uClockClass::PPQN_24, record_sync_24);
+    clock.init();
+    clock.start();
+
+    fake_micros = 1000;
+    clock.handleInternalClock();
+    clock.setInputPPQN(umodular::clock::uClockClass::PPQN_1);
+    clock.setClockMode(umodular::clock::uClockClass::EXTERNAL_CLOCK);
+
+    fake_micros = 501000;
+    clock.clockMeAt(fake_micros);
+    for (uint8_t index = 1; index < 96; index++) {
+        fake_micros += 5208;
+        clock.handleInternalClock();
+    }
+
+    TEST_ASSERT_EQUAL_UINT8(umodular::clock::uClockClass::STARTED,
+                            clock.clock_state);
+    TEST_ASSERT_EQUAL_UINT32(97, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(25, sync_24_ticks.size());
+    TEST_ASSERT_EQUAL_UINT16(0, clock.getExternalTicksRemaining());
+}
+
+static void test_late_ppqn_1_pulse_does_not_burst_pending_ticks()
+{
+    umodular::clock::uClockClass clock;
+    clock.setOutputPPQN(umodular::clock::uClockClass::PPQN_96);
+    clock.setInputPPQN(umodular::clock::uClockClass::PPQN_1);
+    clock.setClockMode(umodular::clock::uClockClass::EXTERNAL_CLOCK);
+    clock.setStrictExternalMode(true);
+    clock.setOnSync(umodular::clock::uClockClass::PPQN_24, record_sync_24);
+    clock.init();
+    clock.start();
+
+    fake_micros = 1000;
+    clock.clockMeAt(fake_micros);
+    TEST_ASSERT_EQUAL_UINT32(1, clock.tick);
+    TEST_ASSERT_EQUAL_UINT16(95, clock.getExternalTicksRemaining());
+
+    fake_micros = 501000;
+    clock.clockMeAt(fake_micros);
+
+    TEST_ASSERT_EQUAL_UINT32(2, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(1, sync_24_ticks.size());
+    TEST_ASSERT_EQUAL_UINT16(95, clock.getExternalTicksRemaining());
+}
+
+static void test_reentering_external_mode_discards_stale_authorization()
+{
+    umodular::clock::uClockClass clock;
+    clock.setOutputPPQN(umodular::clock::uClockClass::PPQN_96);
+    clock.setInputPPQN(umodular::clock::uClockClass::PPQN_1);
+    clock.setClockMode(umodular::clock::uClockClass::EXTERNAL_CLOCK);
+    clock.setStrictExternalMode(true);
+    clock.init();
+    clock.start();
+
+    fake_micros = 1000;
+    clock.clockMeAt(fake_micros);
+    TEST_ASSERT_EQUAL_UINT16(95, clock.getExternalTicksRemaining());
+
+    clock.setClockMode(umodular::clock::uClockClass::INTERNAL_CLOCK);
+    clock.setClockMode(umodular::clock::uClockClass::EXTERNAL_CLOCK);
+
+    TEST_ASSERT_EQUAL_UINT16(0, clock.getExternalTicksRemaining());
 }
 
 static void test_reentrant_internal_callback_does_not_advance_twice()
@@ -239,6 +355,55 @@ static void test_external_tempo_ignores_short_startup_interval()
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 75.0f, clock.getTempo());
 }
 
+static void test_timestamped_external_pulses_ignore_delivery_latency()
+{
+    umodular::clock::uClockClass clock;
+    clock.setOutputPPQN(umodular::clock::uClockClass::PPQN_96);
+    clock.setInputPPQN(umodular::clock::uClockClass::PPQN_1);
+    clock.setClockMode(umodular::clock::uClockClass::EXTERNAL_CLOCK);
+    clock.setStrictExternalMode(true);
+    clock.init();
+    clock.start();
+
+    fake_micros = 9000000;
+    clock.clockMeAt(1000000);
+    clock.clockMeAt(1500000);
+    clock.clockMeAt(2000000);
+    clock.clockMeAt(2500000);
+
+    TEST_ASSERT_EQUAL_UINT32(4, clock.ext_clock_tick);
+    TEST_ASSERT_EQUAL_UINT32(500000, clock.ext_interval);
+    TEST_ASSERT_EQUAL_UINT32(500000, clock.getLastAcceptedExternalInterval());
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 120.0f, clock.getTempo());
+}
+
+static void test_internal_beat_sync_slews_without_changing_tick_sequence()
+{
+    umodular::clock::uClockClass clock;
+    clock.setOnSync(umodular::clock::uClockClass::PPQN_24, record_sync_24);
+    clock.init();
+    clock.start();
+
+    fake_micros = 1000;
+    clock.handleInternalClock();
+
+    fake_micros = 126000;
+    TEST_ASSERT_TRUE(clock.syncInternalClockToBeat(fake_micros));
+    TEST_ASSERT_EQUAL_INT32(125000, clock.getInternalPhaseCorrectionUs());
+    TEST_ASSERT_EQUAL_UINT16(96, clock.getInternalPhaseSlewTicksRemaining());
+
+    for (uint16_t index = 0; index < 96; index++) {
+        fake_micros += 5208;
+        clock.handleInternalClock();
+    }
+
+    TEST_ASSERT_EQUAL_UINT16(0, clock.getInternalPhaseSlewTicksRemaining());
+    TEST_ASSERT_EQUAL_UINT32(97, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(25, sync_24_ticks.size());
+    for (uint32_t index = 0; index < sync_24_ticks.size(); index++)
+        TEST_ASSERT_EQUAL_UINT32(index, sync_24_ticks[index]);
+}
+
 static void test_early_external_pulse_catches_up_without_skipping_callbacks()
 {
     umodular::clock::uClockClass clock;
@@ -253,11 +418,17 @@ static void test_early_external_pulse_catches_up_without_skipping_callbacks()
     fake_micros = 21000;
     clock.clockMe();
 
+    TEST_ASSERT_EQUAL_UINT32(2, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(1, sync_24_ticks.size());
+    TEST_ASSERT_EQUAL_UINT16(6, clock.external_ticks_remaining);
+
+    while (clock.getExternalTicksRemaining() > 0)
+        clock.handleInternalClock();
+
     const uint32_t expected_ticks[] = {0, 1};
-    TEST_ASSERT_EQUAL_UINT32(5, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(8, clock.tick);
     TEST_ASSERT_EQUAL_UINT32(2, sync_24_ticks.size());
     TEST_ASSERT_EQUAL_UINT32_ARRAY(expected_ticks, sync_24_ticks.data(), 2);
-    TEST_ASSERT_EQUAL_UINT16(3, clock.external_ticks_remaining);
 }
 
 static void test_external_clock_resumes_after_dropout_without_resetting_position()
@@ -295,8 +466,11 @@ static void test_external_clock_resumes_after_dropout_without_resetting_position
     fake_micros += 20000;
     clock.clockMe();
 
+    while (clock.getExternalTicksRemaining() > 0)
+        clock.handleInternalClock();
+
     const uint32_t expected_ticks[] = {0, 1, 2, 3};
-    TEST_ASSERT_EQUAL_UINT32(13, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(16, clock.tick);
     TEST_ASSERT_EQUAL_UINT32(4, sync_24_ticks.size());
     TEST_ASSERT_EQUAL_UINT32_ARRAY(expected_ticks, sync_24_ticks.data(), 4);
     TEST_ASSERT_EQUAL_UINT32(20000, clock.getLastAcceptedExternalInterval());
@@ -323,6 +497,9 @@ static void test_external_tempo_changes_do_not_duplicate_or_skip_sync_ticks()
         fake_micros += pulse_intervals[pulse % 8];
         clock.clockMe();
     }
+
+    while (clock.getExternalTicksRemaining() > 0)
+        clock.handleInternalClock();
 
     TEST_ASSERT_EQUAL_UINT32(32, sync_24_ticks.size());
     for (uint32_t i = 0; i < sync_24_ticks.size(); i++)
@@ -441,8 +618,15 @@ int main(int, char **)
     RUN_TEST(test_output_tick_end_runs_after_sync_and_step_callbacks);
     RUN_TEST(test_strict_external_clock_allows_only_one_output_group_per_pulse);
     RUN_TEST(test_back_to_back_external_pulses_preserve_both_output_groups);
+    RUN_TEST(test_strict_external_ppqn_4_pulse_authorizes_quarter_group);
+    RUN_TEST(test_strict_external_ppqn_1_pulse_authorizes_full_quarter);
+    RUN_TEST(test_live_switch_to_ppqn_1_external_clock_keeps_timer_progressing);
+    RUN_TEST(test_late_ppqn_1_pulse_does_not_burst_pending_ticks);
+    RUN_TEST(test_reentering_external_mode_discards_stale_authorization);
     RUN_TEST(test_reentrant_internal_callback_does_not_advance_twice);
     RUN_TEST(test_external_tempo_ignores_short_startup_interval);
+    RUN_TEST(test_timestamped_external_pulses_ignore_delivery_latency);
+    RUN_TEST(test_internal_beat_sync_slews_without_changing_tick_sequence);
     RUN_TEST(test_early_external_pulse_catches_up_without_skipping_callbacks);
     RUN_TEST(test_external_clock_resumes_after_dropout_without_resetting_position);
     RUN_TEST(test_external_tempo_changes_do_not_duplicate_or_skip_sync_ticks);
