@@ -71,7 +71,7 @@ class uClockClass {
         };
 
         enum ClockState {
-            STOPED = 0,
+            STOPPED = 0,
             PAUSED,
             STARTING,
             SYNCING,
@@ -92,8 +92,7 @@ class uClockClass {
             PPQN_960 = 960
         };
 
-        ClockState clock_state = STOPED;
-        bool tick_immediately = false;
+        ClockState clock_state = STOPPED;
 
         uClockClass();
         ~uClockClass();
@@ -101,6 +100,9 @@ class uClockClass {
         // set main input and output clock rates
         void setOutputPPQN(PPQNResolution resolution);
         void setInputPPQN(PPQNResolution resolution);
+        PPQNResolution getOutputPPQN() const {
+            return output_ppqn;
+        }
         
         // callbacks setup
         void setOnOutputPPQN(void (*callback)(uint32_t tick)) {
@@ -178,7 +180,7 @@ class uClockClass {
         void setShuffleSize(uint8_t size, uint8_t track = 0);
         void setShuffleData(uint8_t step, int8_t tick, uint8_t track = 0);
         void setShuffleTemplate(const int8_t * shuff, uint8_t size, uint8_t track = 0);
-        // use this to know how many positive or negative ticks to add to current note length
+        // Difference between the next and current shuffle offsets, in output-PPQN ticks.
         int8_t getShuffleLength(uint8_t track = 0);
 
         // for software timer implementation(fallback for no board support)

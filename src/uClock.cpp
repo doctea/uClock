@@ -91,16 +91,16 @@
 #endif
 
 #if !defined(UCLOCK_HAS_PLATFORM_EXTERNAL_CLOCK_TIMESTAMP)
-static inline uint32_t uclockPlatformExternalClockTimestamp()
-{
-    return micros();
-}
+    static inline uint32_t uclockPlatformExternalClockTimestamp()
+    {
+        return micros();
+    }
 
-static inline uint32_t uclockPlatformExternalClockIntervalUs(
-    uint32_t previous_timestamp, uint32_t current_timestamp)
-{
-    return current_timestamp - previous_timestamp;
-}
+    static inline uint32_t uclockPlatformExternalClockIntervalUs(
+        uint32_t previous_timestamp, uint32_t current_timestamp)
+    {
+        return current_timestamp - previous_timestamp;
+    }
 #endif
 
 //
@@ -156,9 +156,9 @@ uClockClass::~uClockClass()
     if (tracks)
         delete[] tracks;
 
-#ifdef UCLOCK_ENABLE_TRACE
-    delete[] trace_events;
-#endif
+    #ifdef UCLOCK_ENABLE_TRACE
+        delete[] trace_events;
+    #endif
 }
 
 void uClockClass::init()
@@ -184,85 +184,67 @@ void uClockClass::handleInternalClock()
     ++int_overflow_counter;
 
     if (int_overflow_counter > 1) {
-#ifdef UCLOCK_ENABLE_TRACE
-        traceEvent(TRACE_INTERNAL_REENTRY, UINT8_MAX, 0, 0, 0, -1, int_overflow_counter);
-#endif
+        #ifdef UCLOCK_ENABLE_TRACE
+            traceEvent(TRACE_INTERNAL_REENTRY, UINT8_MAX, 0, 0, 0, -1, int_overflow_counter);
+        #endif
         --int_overflow_counter;
         return;
     }
 
-    if (clock_state <= STARTING) { // STOPED=0, PAUSED=1, STARTING=2, SYNCING=3, STARTED=4
+    if (clock_state <= STARTING) { // STOPPED=0, PAUSED=1, STARTING=2, SYNCING=3, STARTED=4
         --int_overflow_counter;
         return;
     }
 
-    if (clock_mode == EXTERNAL_CLOCK && strict_external_mode &&
-        external_ticks_remaining == 0) {
-#ifdef UCLOCK_ENABLE_TRACE
-        if (!external_clock_stalled && ext_clock_us > 0 &&
-            clock_diff(ext_clock_us, micros()) > getExternalClockStallTimeout()) {
+    if (clock_mode == EXTERNAL_CLOCK && strict_external_mode && external_ticks_remaining == 0) {
+        if (
+            !external_clock_stalled
+            && ext_clock_us > 0
+            && clock_diff(ext_clock_us, micros()) > getExternalClockStallTimeout()
+        ) {
             external_clock_stalled = true;
-            traceEvent(TRACE_EXTERNAL_STALLED, UINT8_MAX, 0, 0, 0, -1,
-                       clock_diff(ext_clock_us, micros()));
+            #ifdef UCLOCK_ENABLE_TRACE
+                traceEvent(TRACE_EXTERNAL_STALLED, UINT8_MAX, 0, 0, 0, -1,
+                    clock_diff(ext_clock_us, micros()));
+            #endif
         }
-#else
-        if (!external_clock_stalled && ext_clock_us > 0 &&
-            clock_diff(ext_clock_us, micros()) > getExternalClockStallTimeout())
-            external_clock_stalled = true;
-#endif
         --int_overflow_counter;
         return;
     }
 
     last_internal_tick_us = micros();
 
-    // Watchdog: stop musical clock if no external pulse received for 1 second
-    // if (clock_mode == EXTERNAL_CLOCK && clock_state == STARTED && ext_clock_us > 0) {
-    //     if (clock_diff(ext_clock_us, micros()) > 1000000UL) {
-    //         clock_state = PAUSED;
-    //         return;
-    //     }
-    // }
-
     // tick phase lock and external tempo match for EXTERNAL_CLOCK mode
     if (clock_mode == EXTERNAL_CLOCK && !strict_external_mode) {
         int64_t phase_error = (int64_t)int_clock_tick - (int64_t)ext_clock_tick;
-        // check for strict external mode -- don't progress if external clock hasn't caught up with internal clock
-        // if (!tick_immediately && !uClock.allowTick())
-        //     return;
 
         // Tick Phase-lock
-        if (!strict_external_mode &&
-            // tick_immediately || 
-            phase_error > 1 || phase_error < -1
-        ) {
+        if (!strict_external_mode && (phase_error > 1 || phase_error < -1)) {
 
-#ifdef UCLOCK_ENABLE_TRACE
-            if (!trace_phase_error_active) {
-                traceEvent(TRACE_PHASE_ERROR, UINT8_MAX, 0, 0, 0, -1,
-                           (int32_t)phase_error);
-                trace_phase_error_active = true;
-            }
-#endif
+            #ifdef UCLOCK_ENABLE_TRACE
+                if (!trace_phase_error_active) {
+                    traceEvent(TRACE_PHASE_ERROR, UINT8_MAX, 0, 0, 0, -1,
+                            (int32_t)phase_error);
+                    trace_phase_error_active = true;
+                }
+            #endif
 
-            int mod_amount = 0; //(output_ppqn*phase_lock_quarters)/4;
+            int mod_amount = 0;
 
             // only update tick at a full quarter or phase_lock_quarters * a quarter
             // how many quarters to count until we phase-lock?
             if (
-                // tick_immediately || 
                 ((ext_clock_tick * mod_clock_ref) % (output_ppqn*phase_lock_quarters)) == mod_amount
             ) {
-#ifdef UCLOCK_ENABLE_TRACE
-                traceEvent(TRACE_PHASE_LOCK, UINT8_MAX, 0, 0, 0, -1,
+                #ifdef UCLOCK_ENABLE_TRACE
+                    traceEvent(TRACE_PHASE_LOCK, UINT8_MAX, 0, 0, 0, -1,
                            (int32_t)phase_error);
-#endif
-                // tick_immediately = false;
+                #endif
                 tick = ext_clock_tick * mod_clock_ref;
                 int_clock_tick = ext_clock_tick;
-#ifdef UCLOCK_ENABLE_TRACE
-                trace_phase_error_active = false;
-#endif
+                #ifdef UCLOCK_ENABLE_TRACE
+                    trace_phase_error_active = false;
+                #endif
                 // update any counter reference to lock with int_clock_tick
                 for (uint8_t track=0; track < track_slots_size; track++) {
                     tracks[track].step_counter = tick/mod_step_ref;
@@ -280,10 +262,10 @@ void uClockClass::handleInternalClock()
                     }
                 }
             }
-#ifdef UCLOCK_ENABLE_TRACE
         } else {
-            trace_phase_error_active = false;
-#endif
+            #ifdef UCLOCK_ENABLE_TRACE
+                trace_phase_error_active = false;
+            #endif
         }
 
         #ifdef UCLOCK_ENABLE_BUFFER_AVERAGE
@@ -312,10 +294,10 @@ void uClockClass::handleInternalClock()
 
                     external_tempo = constrainBpm(freqToBpm(counter));
                     if (external_tempo != tempo) {
-#ifdef UCLOCK_ENABLE_TRACE
-                        traceEvent(TRACE_TEMPO_CHANGE, UINT8_MAX, 0, 0, 0, -1,
-                                   (int32_t)(external_tempo * 1000.0f));
-#endif
+                        #ifdef UCLOCK_ENABLE_TRACE
+                            traceEvent(TRACE_TEMPO_CHANGE, UINT8_MAX, 0, 0, 0, -1,
+                                    (int32_t)(external_tempo * 1000.0f));
+                        #endif
                         tempo = external_tempo;
                         uClockSetTimerTempo(tempo);
                     }
@@ -338,23 +320,16 @@ void uClockClass::handleInternalClock()
 
                 external_tempo = constrainBpm(freqToBpm(counter));
                 if (external_tempo != tempo) {
-#ifdef UCLOCK_ENABLE_TRACE
-                    traceEvent(TRACE_TEMPO_CHANGE, UINT8_MAX, 0, 0, 0, -1,
+                    #ifdef UCLOCK_ENABLE_TRACE
+                        traceEvent(TRACE_TEMPO_CHANGE, UINT8_MAX, 0, 0, 0, -1,
                                (int32_t)(external_tempo * 1000.0f));
-#endif
+                    #endif
                     tempo = external_tempo;
                     uClockSetTimerTempo(tempo);
                 }
             }
         #endif
     }
-
-    // if (clock_mode == EXTERNAL_CLOCK) {
-    //     // check for strict external mode -- don't progress if external clock hasn't caught up with internal clock
-    //     if (!tick_immediately && !uClock.allowTick())
-    //         return;
-    // }
-    // tick_immediately = false;
 
     // main input clock counter control
     if (mod_clock_counter >= mod_clock_ref)
@@ -439,18 +414,18 @@ void uClockClass::handleExternalClock(uint32_t observed_at_us,
                                       bool platform_timestamp_valid)
 {
     static uint8_t start_sync_counter = 0;
-#if defined(UCLOCK_ENABLE_TRACE) && defined(UCLOCK_TRACE_EXTERNAL_CLOCK_TIMING)
-    int32_t external_timing_delta = 0;
-    bool external_timing_delta_valid = false;
-#endif
+    #if defined(UCLOCK_ENABLE_TRACE) && defined(UCLOCK_TRACE_EXTERNAL_CLOCK_TIMING)
+        int32_t external_timing_delta = 0;
+        bool external_timing_delta_valid = false;
+    #endif
 
     // for debug usage while developing any application under uClock
     ++ext_overflow_counter;
 
-#ifdef UCLOCK_ENABLE_TRACE
-    if (ext_overflow_counter > 1)
-        traceEvent(TRACE_EXTERNAL_REENTRY, UINT8_MAX, 0, 0, 0, -1, ext_overflow_counter);
-#endif
+    #ifdef UCLOCK_ENABLE_TRACE
+        if (ext_overflow_counter > 1)
+            traceEvent(TRACE_EXTERNAL_REENTRY, UINT8_MAX, 0, 0, 0, -1, ext_overflow_counter);
+    #endif
 
     // calculate and store ext_interval
     if (ext_clock_us > 0) {
@@ -460,19 +435,19 @@ void uClockClass::handleExternalClock(uint32_t observed_at_us,
             platform_interval = uclockPlatformExternalClockIntervalUs(
                 ext_clock_timestamp, platform_timestamp);
         }
-    #if defined(UCLOCK_ENABLE_TRACE) && defined(UCLOCK_TRACE_EXTERNAL_CLOCK_TIMING)
-        external_timing_delta = (int32_t)wall_interval - (int32_t)platform_interval;
-        external_timing_delta_valid = ext_clock_timestamp_valid &&
-            platform_timestamp_valid;
-    #endif
-#if defined(UCLOCK_EXTERNAL_CLOCK_USE_MICROS)
-        ext_interval = wall_interval;
-#else
+        #if defined(UCLOCK_ENABLE_TRACE) && defined(UCLOCK_TRACE_EXTERNAL_CLOCK_TIMING)
+            external_timing_delta = (int32_t)wall_interval - (int32_t)platform_interval;
+            external_timing_delta_valid = ext_clock_timestamp_valid &&
+                platform_timestamp_valid;
+        #endif
+        #if defined(UCLOCK_EXTERNAL_CLOCK_USE_MICROS)
+            ext_interval = wall_interval;
+        #else
         ext_interval = ext_clock_timestamp_valid && platform_timestamp_valid &&
             wall_interval <= getExternalClockStallTimeout()
             ? platform_interval
             : wall_interval;
-#endif
+        #endif
     }
     ext_clock_us = observed_at_us;
     ext_clock_timestamp = platform_timestamp;
@@ -481,14 +456,14 @@ void uClockClass::handleExternalClock(uint32_t observed_at_us,
     // external clock tick me!
     ext_clock_tick++;
 
-#ifdef UCLOCK_ENABLE_TRACE
-    traceEvent(TRACE_EXTERNAL_PULSE, UINT8_MAX, 0, 0, 0, -1, ext_interval);
-#if defined(UCLOCK_TRACE_EXTERNAL_CLOCK_TIMING)
-    if (external_timing_delta_valid)
-        traceEvent(TRACE_EXTERNAL_TIMING_DELTA, UINT8_MAX, 0, 0, 0, -1,
-                   external_timing_delta);
-#endif
-#endif
+    #ifdef UCLOCK_ENABLE_TRACE
+        traceEvent(TRACE_EXTERNAL_PULSE, UINT8_MAX, 0, 0, 0, -1, ext_interval);
+        #if defined(UCLOCK_TRACE_EXTERNAL_CLOCK_TIMING)
+            if (external_timing_delta_valid)
+                traceEvent(TRACE_EXTERNAL_TIMING_DELTA, UINT8_MAX, 0, 0, 0, -1,
+                        external_timing_delta);
+        #endif
+    #endif
 
     if (strict_external_mode &&
         (clock_state == STARTING || clock_state == SYNCING || clock_state == STARTED)) {
@@ -500,19 +475,19 @@ void uClockClass::handleExternalClock(uint32_t observed_at_us,
             ext_interval_idx = 0;
             if (!external_clock_stalled) {
                 external_clock_stalled = true;
-#ifdef UCLOCK_ENABLE_TRACE
-                traceEvent(TRACE_EXTERNAL_STALLED, UINT8_MAX, 0, 0, 0, -1,
+                #ifdef UCLOCK_ENABLE_TRACE
+                    traceEvent(TRACE_EXTERNAL_STALLED, UINT8_MAX, 0, 0, 0, -1,
                            ext_interval);
-#endif
+                #endif
             }
         }
 
         if (external_clock_stalled) {
             external_clock_stalled = false;
-#ifdef UCLOCK_ENABLE_TRACE
-            traceEvent(TRACE_EXTERNAL_RESUMED, UINT8_MAX, 0, 0, 0, -1,
+            #ifdef UCLOCK_ENABLE_TRACE
+                traceEvent(TRACE_EXTERNAL_RESUMED, UINT8_MAX, 0, 0, 0, -1,
                        ext_interval);
-#endif
+            #endif
         }
 
         if (!discontinuity)
@@ -528,10 +503,10 @@ void uClockClass::handleExternalClock(uint32_t observed_at_us,
                 low_ppqn_target_ticks = phase <= mod_clock_ref / 2
                     ? mod_clock_ref - phase
                     : (mod_clock_ref * 2) - phase;
-#ifdef UCLOCK_ENABLE_TRACE
-                traceEvent(TRACE_PHASE_LOCK, UINT8_MAX, 0, 0, 0, -1,
+                #ifdef UCLOCK_ENABLE_TRACE
+                    traceEvent(TRACE_PHASE_LOCK, UINT8_MAX, 0, 0, 0, -1,
                            (int32_t)low_ppqn_target_ticks - mod_clock_ref);
-#endif
+                #endif
             }
 
             uint32_t minimum_interval = 60000000UL / input_ppqn / MAX_BPM;
@@ -543,9 +518,9 @@ void uClockClass::handleExternalClock(uint32_t observed_at_us,
             setTimer(input_interval / low_ppqn_target_ticks);
         }
 
-    #ifdef UCLOCK_ENABLE_TRACE
-        uint16_t pending_count = external_ticks_remaining;
-    #endif
+        #ifdef UCLOCK_ENABLE_TRACE
+            uint16_t pending_count = external_ticks_remaining;
+        #endif
         ATOMIC(
             if (input_ppqn < PPQN_24) {
                 external_ticks_remaining = low_ppqn_target_ticks;
@@ -557,11 +532,11 @@ void uClockClass::handleExternalClock(uint32_t observed_at_us,
                     : (uint16_t)authorized_ticks;
             }
         )
-#ifdef UCLOCK_ENABLE_TRACE
-        if (pending_count > 0)
-            traceEvent(TRACE_EXTERNAL_CATCH_UP, UINT8_MAX, 0, 0, 0, -1,
-                       pending_count);
-#endif
+        #ifdef UCLOCK_ENABLE_TRACE
+            if (pending_count > 0)
+                traceEvent(TRACE_EXTERNAL_CATCH_UP, UINT8_MAX, 0, 0, 0, -1,
+                        pending_count);
+        #endif
         handleInternalClock();
 
         --ext_overflow_counter;
@@ -622,10 +597,6 @@ void uClockClass::handleExternalClock(uint32_t observed_at_us,
             }
             break;
     }
-
-    #ifdef UCLOCK_ENABLE_IMMEDIATE_TICK
-        tick_immediately = true;
-    #endif
 
     // for debug usage while developing any application under uClock
     --ext_overflow_counter;
@@ -708,10 +679,10 @@ void uClockClass::updateExternalTempo(uint32_t interval)
     }
     external_tempo = constrainBpm(freqToBpm(total / count));
     if (external_tempo != tempo) {
-#ifdef UCLOCK_ENABLE_TRACE
-        traceEvent(TRACE_TEMPO_CHANGE, UINT8_MAX, 0, 0, 0, -1,
-                   (int32_t)(external_tempo * 1000.0f));
-#endif
+        #ifdef UCLOCK_ENABLE_TRACE
+            traceEvent(TRACE_TEMPO_CHANGE, UINT8_MAX, 0, 0, 0, -1,
+                    (int32_t)(external_tempo * 1000.0f));
+        #endif
         tempo = external_tempo;
         uClockSetTimerTempo(tempo);
     }
@@ -728,9 +699,9 @@ void uClockClass::start()
         ATOMIC(clock_state = STARTING)
     }
 
-#ifdef UCLOCK_ENABLE_TRACE
-    traceEvent(TRACE_START);
-#endif
+    #ifdef UCLOCK_ENABLE_TRACE
+        traceEvent(TRACE_START);
+    #endif
 
     if (onClockStartCallback)
         onClockStartCallback();
@@ -738,7 +709,7 @@ void uClockClass::start()
 
 void uClockClass::stop()
 {
-    ATOMIC(clock_state = STOPED)
+    ATOMIC(clock_state = STOPPED)
     start_timer = 0;
     if (onClockStopCallback)
         onClockStopCallback();
@@ -793,10 +764,10 @@ uClockClass::ClockMode uClockClass::getClockMode()
 // for software timer implementation(fallback for no timer board support)
 void uClockClass::run()
 {
-#if defined(USE_UCLOCK_SOFTWARE_TIMER)
-    // call software timer implementation
-    softwareTimerHandler(micros());
-#endif
+    #if defined(USE_UCLOCK_SOFTWARE_TIMER)
+        // call software timer implementation
+        softwareTimerHandler(micros());
+    #endif
 }
 
 void uClockClass::stepSeqTick()
@@ -813,18 +784,18 @@ void uClockClass::stepSeqTick()
         }
 
         if (stepProcess) {
-#ifdef UCLOCK_ENABLE_TRACE
-            int8_t shuffle_value = 0;
-            int16_t shuffle_target = 0;
-            if (tracks[track].shuffle.tmplt.active) {
-                shuffle_value = tracks[track].shuffle.current_shff;
-                shuffle_target = shuffle_value >= 0
-                    ? shuffle_value
-                    : mod_step_ref + shuffle_value;
-            }
-            traceEvent(TRACE_STEP_FIRE, track, tracks[track].step_counter,
-                       tracks[track].mod_step_counter, shuffle_value, shuffle_target);
-#endif
+            #ifdef UCLOCK_ENABLE_TRACE
+                int8_t shuffle_value = 0;
+                int16_t shuffle_target = 0;
+                if (tracks[track].shuffle.tmplt.active) {
+                    shuffle_value = tracks[track].shuffle.current_shff;
+                    shuffle_target = shuffle_value >= 0
+                        ? shuffle_value
+                        : mod_step_ref + shuffle_value;
+                }
+                traceEvent(TRACE_STEP_FIRE, track, tracks[track].step_counter,
+                        tracks[track].mod_step_counter, shuffle_value, shuffle_target);
+            #endif
             if (onStepGlobalCallback)
                 onStepGlobalCallback(tracks[track].step_counter);
             if (onStepMultiCallback)
@@ -837,17 +808,17 @@ void uClockClass::stepSeqTick()
         ++tracks[track].mod_step_counter;
     }
 
-#ifdef UCLOCK_ENABLE_TRACE
-    if (track_slots_size > 1) {
-        for (uint8_t track = 1; track < track_slots_size; track++) {
-            if (tracks[track].mod_step_counter != tracks[0].mod_step_counter) {
-                traceEvent(TRACE_STEP_PHASE_DIVERGED, track, tracks[track].step_counter,
-                           tracks[track].mod_step_counter, 0, tracks[0].mod_step_counter,
-                           (int32_t)tracks[track].mod_step_counter - tracks[0].mod_step_counter);
+    #ifdef UCLOCK_ENABLE_TRACE
+        if (track_slots_size > 1) {
+            for (uint8_t track = 1; track < track_slots_size; track++) {
+                if (tracks[track].mod_step_counter != tracks[0].mod_step_counter) {
+                    traceEvent(TRACE_STEP_PHASE_DIVERGED, track, tracks[track].step_counter,
+                            tracks[track].mod_step_counter, 0, tracks[0].mod_step_counter,
+                            (int32_t)tracks[track].mod_step_counter - tracks[0].mod_step_counter);
+                }
             }
         }
-    }
-#endif
+    #endif
 }
 
 void uClockClass::setShuffle(bool active, uint8_t track)
@@ -857,9 +828,9 @@ void uClockClass::setShuffle(bool active, uint8_t track)
 
     ATOMIC(
         if (tracks[track].shuffle.tmplt.active != active) {
-#ifdef UCLOCK_ENABLE_TRACE
-            bool previous = tracks[track].shuffle.tmplt.active;
-#endif
+            #ifdef UCLOCK_ENABLE_TRACE
+                bool previous = tracks[track].shuffle.tmplt.active;
+            #endif
             tracks[track].shuffle.tmplt.active = active;
             tracks[track].shuffle.current_shff_valid = false;
             tracks[track].shuffle.previous_shff = 0;
@@ -867,11 +838,11 @@ void uClockClass::setShuffle(bool active, uint8_t track)
             // A newly enabled nonnegative step belongs to the next modulo
             // window. processShuffle() immediately arms negative offsets.
             tracks[track].shuffle.shuffle_shoot_ctrl = !active;
-#ifdef UCLOCK_ENABLE_TRACE
-            traceEvent(TRACE_SHUFFLE_STATE, track, tracks[track].step_counter,
+            #ifdef UCLOCK_ENABLE_TRACE
+                traceEvent(TRACE_SHUFFLE_STATE, track, tracks[track].step_counter,
                        tracks[track].mod_step_counter, active ? 1 : 0, -1,
                        previous ? 1 : 0);
-#endif
+            #endif
         }
     )
 }
@@ -903,15 +874,15 @@ void uClockClass::setShuffleData(uint8_t step, int8_t tick, uint8_t track)
         tick <= -(int16_t)mod_step_ref || tick >= (int16_t)mod_step_ref)
         return;
         ATOMIC(
-    #ifdef UCLOCK_ENABLE_TRACE
-        int8_t previous = tracks[track].shuffle.tmplt.step[step];
-    #endif
-        tracks[track].shuffle.tmplt.step[step] = tick;
-    #ifdef UCLOCK_ENABLE_TRACE
-        if (previous != tick)
-            traceEvent(TRACE_SHUFFLE_CHANGE, track, step,
-                   tracks[track].mod_step_counter, tick, -1, previous);
-    #endif
+            #ifdef UCLOCK_ENABLE_TRACE
+                int8_t previous = tracks[track].shuffle.tmplt.step[step];
+            #endif
+            tracks[track].shuffle.tmplt.step[step] = tick;
+            #ifdef UCLOCK_ENABLE_TRACE
+                if (previous != tick)
+                    traceEvent(TRACE_SHUFFLE_CHANGE, track, step,
+                        tracks[track].mod_step_counter, tick, -1, previous);
+            #endif
         )
 }
 
@@ -930,15 +901,15 @@ void uClockClass::setShuffleTemplate(const int8_t * shuff, uint8_t size, uint8_t
     ATOMIC(
         tracks[track].shuffle.tmplt.size = size;
         for (uint8_t i = 0; i < size; i++) {
-#ifdef UCLOCK_ENABLE_TRACE
-            int8_t previous = tracks[track].shuffle.tmplt.step[i];
-#endif
+            #ifdef UCLOCK_ENABLE_TRACE
+                int8_t previous = tracks[track].shuffle.tmplt.step[i];
+            #endif
             tracks[track].shuffle.tmplt.step[i] = shuff[i];
-#ifdef UCLOCK_ENABLE_TRACE
-            if (previous != shuff[i])
-                traceEvent(TRACE_SHUFFLE_CHANGE, track, i,
-                           tracks[track].mod_step_counter, shuff[i], -1, previous);
-#endif
+            #ifdef UCLOCK_ENABLE_TRACE
+                if (previous != shuff[i])
+                    traceEvent(TRACE_SHUFFLE_CHANGE, track, i,
+                            tracks[track].mod_step_counter, shuff[i], -1, previous);
+            #endif
         }
     )
 }
@@ -957,10 +928,10 @@ bool inline uClockClass::processShuffle(uint8_t track)
         return false;
 
     if (tracks[track].shuffle.tmplt.size == 0) {
-#ifdef UCLOCK_ENABLE_TRACE
-        traceEvent(TRACE_INVALID_STATE, track, tracks[track].step_counter,
+        #ifdef UCLOCK_ENABLE_TRACE
+            traceEvent(TRACE_INVALID_STATE, track, tracks[track].step_counter,
                    tracks[track].mod_step_counter, 0, -1, 1);
-#endif
+        #endif
         return false;
     }
 
@@ -998,10 +969,7 @@ bool inline uClockClass::processShuffle(uint8_t track)
     if (mod_shuffle == 0 && tracks[track].shuffle.shuffle_shoot_ctrl == true) {
         // keep track of next note shuffle for current note lenght control
         tracks[track].shuffle.shuffle_length_ctrl = tracks[track].shuffle.tmplt.step[(tracks[track].step_counter+1)%tracks[track].shuffle.tmplt.size];
-        if (shff > 0)
-            tracks[track].shuffle.shuffle_length_ctrl -= shff;
-        if (shff < 0)
-            tracks[track].shuffle.shuffle_length_ctrl += shff;
+        tracks[track].shuffle.shuffle_length_ctrl -= shff;
         tracks[track].shuffle.previous_shff = shff;
         tracks[track].shuffle.shuffle_shoot_ctrl = false;
         return true;
@@ -1213,82 +1181,82 @@ void uClockClass::resetCounters()
 }
 
 #ifdef UCLOCK_ENABLE_TRACE
-void uClockClass::traceEvent(TraceEventType type, uint8_t track, uint32_t step,
-                             uint16_t step_phase, int8_t shuffle_value,
-                             int16_t shuffle_target, int32_t value)
-{
-    if (trace_frozen) {
-        ++trace_dropped;
-        return;
-    }
-
-    uint16_t head = trace_head;
-    TraceEvent &event = trace_events[head];
-    event.timestamp_us = micros();
-    event.tick = tick;
-    event.int_clock_tick = int_clock_tick;
-    event.ext_clock_tick = ext_clock_tick;
-    event.step = step;
-    event.value = value;
-    event.mod_clock_counter = mod_clock_counter;
-    event.mod_step_counter = step_phase;
-    event.shuffle_target = shuffle_target;
-    event.shuffle_value = shuffle_value;
-    event.track = track;
-    event.type = type;
-    event.clock_state = clock_state;
-    event.handler_depth = int_overflow_counter > ext_overflow_counter
-        ? int_overflow_counter
-        : ext_overflow_counter;
-
-    uint16_t next = (head + 1) % UCLOCK_TRACE_BUFFER_SIZE;
-    if (next == trace_tail) {
-        trace_tail = (trace_tail + 1) % UCLOCK_TRACE_BUFFER_SIZE;
-        ++trace_dropped;
-    }
-    trace_head = next;
-
-    if (type == TRACE_STEP_PHASE_DIVERGED || type == TRACE_EXTERNAL_REENTRY ||
-        type == TRACE_INVALID_STATE)
-        trace_frozen = true;
-}
-
-bool uClockClass::popTraceEvent(TraceEvent &event)
-{
-    bool available = false;
-    ATOMIC(
-        if (trace_tail != trace_head) {
-            event = trace_events[trace_tail];
-            trace_tail = (trace_tail + 1) % UCLOCK_TRACE_BUFFER_SIZE;
-            available = true;
+    void uClockClass::traceEvent(TraceEventType type, uint8_t track, uint32_t step,
+                                uint16_t step_phase, int8_t shuffle_value,
+                                int16_t shuffle_target, int32_t value)
+    {
+        if (trace_frozen) {
+            ++trace_dropped;
+            return;
         }
-    )
-    return available;
-}
 
-void uClockClass::clearTrace()
-{
-    ATOMIC(
-        trace_head = 0;
-        trace_tail = 0;
-        trace_dropped = 0;
-        trace_frozen = false;
-    )
-}
+        uint16_t head = trace_head;
+        TraceEvent &event = trace_events[head];
+        event.timestamp_us = micros();
+        event.tick = tick;
+        event.int_clock_tick = int_clock_tick;
+        event.ext_clock_tick = ext_clock_tick;
+        event.step = step;
+        event.value = value;
+        event.mod_clock_counter = mod_clock_counter;
+        event.mod_step_counter = step_phase;
+        event.shuffle_target = shuffle_target;
+        event.shuffle_value = shuffle_value;
+        event.track = track;
+        event.type = type;
+        event.clock_state = clock_state;
+        event.handler_depth = int_overflow_counter > ext_overflow_counter
+            ? int_overflow_counter
+            : ext_overflow_counter;
 
-uint32_t uClockClass::getTraceDroppedCount()
-{
-    uint32_t dropped = 0;
-    ATOMIC(dropped = trace_dropped)
-    return dropped;
-}
+        uint16_t next = (head + 1) % UCLOCK_TRACE_BUFFER_SIZE;
+        if (next == trace_tail) {
+            trace_tail = (trace_tail + 1) % UCLOCK_TRACE_BUFFER_SIZE;
+            ++trace_dropped;
+        }
+        trace_head = next;
 
-bool uClockClass::isTraceFrozen()
-{
-    bool frozen = false;
-    ATOMIC(frozen = trace_frozen)
-    return frozen;
-}
+        if (type == TRACE_STEP_PHASE_DIVERGED || type == TRACE_EXTERNAL_REENTRY ||
+            type == TRACE_INVALID_STATE)
+            trace_frozen = true;
+    }
+
+    bool uClockClass::popTraceEvent(TraceEvent &event)
+    {
+        bool available = false;
+        ATOMIC(
+            if (trace_tail != trace_head) {
+                event = trace_events[trace_tail];
+                trace_tail = (trace_tail + 1) % UCLOCK_TRACE_BUFFER_SIZE;
+                available = true;
+            }
+        )
+        return available;
+    }
+
+    void uClockClass::clearTrace()
+    {
+        ATOMIC(
+            trace_head = 0;
+            trace_tail = 0;
+            trace_dropped = 0;
+            trace_frozen = false;
+        )
+    }
+
+    uint32_t uClockClass::getTraceDroppedCount()
+    {
+        uint32_t dropped = 0;
+        ATOMIC(dropped = trace_dropped)
+        return dropped;
+    }
+
+    bool uClockClass::isTraceFrozen()
+    {
+        bool frozen = false;
+        ATOMIC(frozen = trace_frozen)
+        return frozen;
+    }
 #endif
 
 void uClockClass::tap()

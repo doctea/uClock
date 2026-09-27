@@ -10,6 +10,7 @@ static uint32_t fake_micros = 0;
 static umodular::clock::uClockClass *callback_clock = nullptr;
 static std::vector<uint32_t> fired_steps;
 static std::vector<uint32_t> fired_ticks;
+static std::vector<int8_t> shuffle_lengths;
 static std::vector<uint32_t> sync_24_ticks;
 static uint32_t sync_24_count = 0;
 static uint32_t sync_4_count = 0;
@@ -31,6 +32,7 @@ static void record_step(uint32_t step)
     fired_steps.push_back(step);
     uint32_t callback_tick = callback_clock->tick;
     fired_ticks.push_back(callback_tick);
+    shuffle_lengths.push_back(callback_clock->getShuffleLength());
 }
 
 static void record_sync_24(uint32_t tick)
@@ -77,6 +79,7 @@ void setUp()
     callback_clock = nullptr;
     fired_steps.clear();
     fired_ticks.clear();
+    shuffle_lengths.clear();
     sync_24_ticks.clear();
     sync_24_count = 0;
     sync_4_count = 0;
@@ -614,6 +617,24 @@ static void test_mid_cycle_shuffle_activation_does_not_add_a_step()
     TEST_ASSERT_EQUAL_UINT32_ARRAY(expected_ticks, fired_ticks.data(), 2);
 }
 
+static void test_shuffle_length_is_next_offset_minus_current_offset()
+{
+    umodular::clock::uClockClass clock;
+    callback_clock = &clock;
+    clock.setOnStep(record_step);
+    clock.init();
+    clock.clock_state = umodular::clock::uClockClass::STARTED;
+
+    int8_t shuffle_template[] = {8, -8};
+    clock.setShuffleTemplate(shuffle_template, 2);
+    clock.setShuffle(true);
+    run_until_tick(clock, 40);
+
+    const int8_t expected_lengths[] = {-16, 16};
+    TEST_ASSERT_EQUAL_UINT32(2, shuffle_lengths.size());
+    TEST_ASSERT_EQUAL_INT8_ARRAY(expected_lengths, shuffle_lengths.data(), 2);
+}
+
 static void test_live_shuffle_update_preserves_latched_step()
 {
     umodular::clock::uClockClass clock;
@@ -688,6 +709,7 @@ int main(int, char **)
     RUN_TEST(test_external_tempo_changes_do_not_duplicate_or_skip_sync_ticks);
     RUN_TEST(test_external_continue_preserves_position_and_start_rewinds);
     RUN_TEST(test_mid_cycle_shuffle_activation_does_not_add_a_step);
+    RUN_TEST(test_shuffle_length_is_next_offset_minus_current_offset);
     RUN_TEST(test_live_shuffle_update_preserves_latched_step);
     RUN_TEST(test_trace_freezes_after_first_anomaly);
     return UNITY_END();

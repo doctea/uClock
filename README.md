@@ -46,6 +46,14 @@ lib_deps =
 3. Type "uclock" at the search box
 4. Click Install for latest version
 
+## Native Tests
+
+From the library root, with host `gcc` and `g++` available on `PATH`, run:
+
+```sh
+pio test -e native
+```
+
 ## Core Concepts
 
 ### Clock Resolutions (PPQN)
