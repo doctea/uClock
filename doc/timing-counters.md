@@ -144,18 +144,31 @@ startup or ongoing reconstruction.
 
 ### Strict external pulse ownership
 
-With strict external mode enabled, each input pulse authorizes exactly
+With strict external mode enabled, each input pulse normally authorizes
 `mod_clock_ref` output ticks. At 24 PPQN input and 96 PPQN output, one MIDI
-Clock pulse therefore owns four output ticks. Still-pending subdivisions remain
-authorized when another pulse arrives, but are processed at timer cadence rather
-than replayed synchronously in the pulse handler. Strict external mode does not
-reconstruct counters; callback positions remain monotonic. The pulse handler
-processes one boundary immediately and timer callbacks process the remaining
+Clock pulse therefore owns four output ticks. At 24 PPQN and above,
+still-pending subdivisions remain authorized when another pulse arrives. At
+lower input rates, a new pulse replaces stale pending subdivisions so delayed
+work cannot build into a multi-beat burst. Work is processed at timer cadence
+rather than replayed synchronously in the pulse handler. Strict external mode
+does not reconstruct counters; callback positions remain monotonic. The pulse
+handler processes at most one tick and timer callbacks process the remaining
 authorized subdivisions. They cannot advance without an external pulse budget.
 
 Lower input rates use the same rule. At 96 PPQN output, one 4-PPQN pulse owns
 24 output ticks and six PPQN-24 callbacks. One 1-PPQN pulse owns 96 output
 ticks and 24 PPQN-24 callbacks.
+
+A low-rate pulse is also a phase observation. When the next callback is not on
+the input grid, uClock selects the nearest future grid boundary and adjusts both
+the tick budget and timer interval for one input period. This reaches the next
+edge by running sequential callbacks slightly faster or slower; it never rewinds
+position, skips callback IDs, or executes multiple ticks at once. Once aligned,
+a 1-PPQN edge and its quarter-note callback occur together.
+
+Tempo estimation uses approximately one quarter note of recent intervals,
+capped by the configured buffer size. A 1-PPQN source therefore adopts each new
+valid beat interval immediately; a 4-PPQN source smooths over four pulses.
 
 This makes callback positions monotonic and removes the need for hard
 quarter-note counter reconstruction in strict mode. Hard reconstruction can

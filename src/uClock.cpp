@@ -521,11 +521,41 @@ void uClockClass::handleExternalClock(uint32_t observed_at_us,
         if (clock_state != STARTED)
             clock_state = STARTED;
 
+        uint16_t low_ppqn_target_ticks = mod_clock_ref;
+        if (input_ppqn < PPQN_24 && mod_clock_ref > 0) {
+            uint16_t phase = tick % mod_clock_ref;
+            if (phase > 0) {
+                low_ppqn_target_ticks = phase <= mod_clock_ref / 2
+                    ? mod_clock_ref - phase
+                    : (mod_clock_ref * 2) - phase;
+#ifdef UCLOCK_ENABLE_TRACE
+                traceEvent(TRACE_PHASE_LOCK, UINT8_MAX, 0, 0, 0, -1,
+                           (int32_t)low_ppqn_target_ticks - mod_clock_ref);
+#endif
+            }
+
+            uint32_t minimum_interval = 60000000UL / input_ppqn / MAX_BPM;
+            uint32_t maximum_interval = 60000000UL / input_ppqn / MIN_BPM;
+            uint32_t input_interval = ext_interval >= minimum_interval &&
+                ext_interval <= maximum_interval
+                ? ext_interval
+                : bpmToMicroSeconds(tempo) * mod_clock_ref;
+            setTimer(input_interval / low_ppqn_target_ticks);
+        }
+
     #ifdef UCLOCK_ENABLE_TRACE
         uint16_t pending_count = external_ticks_remaining;
     #endif
         ATOMIC(
-            external_ticks_remaining = mod_clock_ref;
+            if (input_ppqn < PPQN_24) {
+                external_ticks_remaining = low_ppqn_target_ticks;
+            } else {
+                uint32_t authorized_ticks = (uint32_t)external_ticks_remaining +
+                    mod_clock_ref;
+                external_ticks_remaining = authorized_ticks > UINT16_MAX
+                    ? UINT16_MAX
+                    : (uint16_t)authorized_ticks;
+            }
         )
 #ifdef UCLOCK_ENABLE_TRACE
         if (pending_count > 0)

@@ -4,6 +4,8 @@
 
 #include "uClock.h"
 
+extern uint32_t uclock_us_interval;
+
 static uint32_t fake_micros = 0;
 static umodular::clock::uClockClass *callback_clock = nullptr;
 static std::vector<uint32_t> fired_steps;
@@ -260,8 +262,8 @@ static void test_live_switch_to_ppqn_1_external_clock_keeps_timer_progressing()
 
     TEST_ASSERT_EQUAL_UINT8(umodular::clock::uClockClass::STARTED,
                             clock.clock_state);
-    TEST_ASSERT_EQUAL_UINT32(97, clock.tick);
-    TEST_ASSERT_EQUAL_UINT32(25, sync_24_ticks.size());
+    TEST_ASSERT_EQUAL_UINT32(96, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(24, sync_24_ticks.size());
     TEST_ASSERT_EQUAL_UINT16(0, clock.getExternalTicksRemaining());
 }
 
@@ -286,7 +288,7 @@ static void test_late_ppqn_1_pulse_does_not_burst_pending_ticks()
 
     TEST_ASSERT_EQUAL_UINT32(2, clock.tick);
     TEST_ASSERT_EQUAL_UINT32(1, sync_24_ticks.size());
-    TEST_ASSERT_EQUAL_UINT16(95, clock.getExternalTicksRemaining());
+    TEST_ASSERT_EQUAL_UINT16(94, clock.getExternalTicksRemaining());
 }
 
 static void test_reentering_external_mode_discards_stale_authorization()
@@ -375,6 +377,58 @@ static void test_timestamped_external_pulses_ignore_delivery_latency()
     TEST_ASSERT_EQUAL_UINT32(500000, clock.ext_interval);
     TEST_ASSERT_EQUAL_UINT32(500000, clock.getLastAcceptedExternalInterval());
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 120.0f, clock.getTempo());
+}
+
+static void test_ppqn_1_tempo_tracks_each_new_interval()
+{
+    umodular::clock::uClockClass clock;
+    clock.setOutputPPQN(umodular::clock::uClockClass::PPQN_96);
+    clock.setInputPPQN(umodular::clock::uClockClass::PPQN_1);
+    clock.setClockMode(umodular::clock::uClockClass::EXTERNAL_CLOCK);
+    clock.setStrictExternalMode(true);
+    clock.init();
+    clock.start();
+
+    clock.clockMeAt(1000000);
+    clock.clockMeAt(1500000);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 120.0f, clock.getTempo());
+
+    clock.clockMeAt(2500000);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 60.0f, clock.getTempo());
+}
+
+static void test_ppqn_1_phase_slew_aligns_next_quarter_boundary()
+{
+    umodular::clock::uClockClass clock;
+    callback_clock = &clock;
+    clock.setOutputPPQN(umodular::clock::uClockClass::PPQN_96);
+    clock.setInputPPQN(umodular::clock::uClockClass::PPQN_1);
+    clock.setClockMode(umodular::clock::uClockClass::EXTERNAL_CLOCK);
+    clock.setStrictExternalMode(true);
+    clock.setOnStep(record_step);
+    clock.setOnSync(umodular::clock::uClockClass::PPQN_24, record_sync_24);
+    clock.init();
+    clock.start();
+
+    clock.clockMeAt(1000000);
+    for (uint8_t index = 0; index < 70; index++)
+        clock.handleInternalClock();
+    TEST_ASSERT_EQUAL_UINT32(71, clock.tick);
+
+    clock.clockMeAt(1500000);
+
+    TEST_ASSERT_EQUAL_UINT32(72, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(120, clock.getExternalTicksRemaining());
+    TEST_ASSERT_EQUAL_UINT32(4132, uclock_us_interval);
+
+    for (uint8_t index = 1; index < 121; index++)
+        clock.handleInternalClock();
+    TEST_ASSERT_EQUAL_UINT32(192, clock.tick);
+
+    clock.clockMeAt(2000000);
+    TEST_ASSERT_EQUAL_UINT32(193, clock.tick);
+    TEST_ASSERT_EQUAL_UINT32(192, fired_ticks.back());
+    TEST_ASSERT_EQUAL_UINT32(48, sync_24_ticks.back());
 }
 
 static void test_internal_beat_sync_slews_without_changing_tick_sequence()
@@ -626,6 +680,8 @@ int main(int, char **)
     RUN_TEST(test_reentrant_internal_callback_does_not_advance_twice);
     RUN_TEST(test_external_tempo_ignores_short_startup_interval);
     RUN_TEST(test_timestamped_external_pulses_ignore_delivery_latency);
+    RUN_TEST(test_ppqn_1_tempo_tracks_each_new_interval);
+    RUN_TEST(test_ppqn_1_phase_slew_aligns_next_quarter_boundary);
     RUN_TEST(test_internal_beat_sync_slews_without_changing_tick_sequence);
     RUN_TEST(test_early_external_pulse_catches_up_without_skipping_callbacks);
     RUN_TEST(test_external_clock_resumes_after_dropout_without_resetting_position);
