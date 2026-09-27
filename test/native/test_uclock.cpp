@@ -635,6 +635,21 @@ static void test_shuffle_length_is_next_offset_minus_current_offset()
     TEST_ASSERT_EQUAL_INT8_ARRAY(expected_lengths, shuffle_lengths.data(), 2);
 }
 
+static void test_shuffle_offset_wraps_at_template_size()
+{
+    umodular::clock::uClockClass clock;
+    clock.setOnStep(record_step);
+    clock.init();
+
+    int8_t shuffle_template[] = {3, -5, 7};
+    clock.setShuffleTemplate(shuffle_template, 3);
+
+    TEST_ASSERT_EQUAL_INT8(3, clock.getShuffleOffset(0));
+    TEST_ASSERT_EQUAL_INT8(-5, clock.getShuffleOffset(1));
+    TEST_ASSERT_EQUAL_INT8(7, clock.getShuffleOffset(2));
+    TEST_ASSERT_EQUAL_INT8(3, clock.getShuffleOffset(3));
+}
+
 static void test_live_shuffle_update_preserves_latched_step()
 {
     umodular::clock::uClockClass clock;
@@ -710,6 +725,7 @@ int main(int, char **)
     RUN_TEST(test_external_continue_preserves_position_and_start_rewinds);
     RUN_TEST(test_mid_cycle_shuffle_activation_does_not_add_a_step);
     RUN_TEST(test_shuffle_length_is_next_offset_minus_current_offset);
+    RUN_TEST(test_shuffle_offset_wraps_at_template_size);
     RUN_TEST(test_live_shuffle_update_preserves_latched_step);
     RUN_TEST(test_trace_freezes_after_first_anomaly);
     return UNITY_END();

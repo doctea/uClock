@@ -180,6 +180,7 @@ class uClockClass {
         void setShuffleSize(uint8_t size, uint8_t track = 0);
         void setShuffleData(uint8_t step, int8_t tick, uint8_t track = 0);
         void setShuffleTemplate(const int8_t * shuff, uint8_t size, uint8_t track = 0);
+        int8_t getShuffleOffset(uint32_t step, uint8_t track = 0);
         // Difference between the next and current shuffle offsets, in output-PPQN ticks.
         int8_t getShuffleLength(uint8_t track = 0);
 

@@ -922,6 +922,14 @@ int8_t uClockClass::getShuffleLength(uint8_t track)
     return tracks[track].shuffle.shuffle_length_ctrl;
 }
 
+int8_t uClockClass::getShuffleOffset(uint32_t step, uint8_t track)
+{
+    if (tracks == nullptr || track >= track_slots_size || tracks[track].shuffle.tmplt.size == 0)
+        return 0;
+
+    return tracks[track].shuffle.tmplt.step[step % tracks[track].shuffle.tmplt.size];
+}
+
 bool inline uClockClass::processShuffle(uint8_t track)
 {
     if (tracks == nullptr)
@@ -967,7 +975,7 @@ bool inline uClockClass::processShuffle(uint8_t track)
 
     // shuffle_shoot_ctrl helps keep track if we have shoot or not a note for the step space of output_ppqn/4 pulses
     if (mod_shuffle == 0 && tracks[track].shuffle.shuffle_shoot_ctrl == true) {
-        // keep track of next note shuffle for current note lenght control
+        // keep track of next note shuffle for current note length control
         tracks[track].shuffle.shuffle_length_ctrl = tracks[track].shuffle.tmplt.step[(tracks[track].step_counter+1)%tracks[track].shuffle.tmplt.size];
         tracks[track].shuffle.shuffle_length_ctrl -= shff;
         tracks[track].shuffle.previous_shff = shff;
