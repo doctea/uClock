@@ -27,7 +27,6 @@
  */
 #include "uClock.h"
 
-// #define UCLOCK_ENABLE_IMMEDIATE_TICK
 #define UCLOCK_ENABLE_BUFFER_AVERAGE
 
 //
