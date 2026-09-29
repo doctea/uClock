@@ -194,7 +194,6 @@ class uClockClass {
         void clockMeAt(uint32_t observed_at_us);
 
         // strict external clock mode functions
-        bool allowTick();
         void setStrictExternalMode(bool strict);
         bool isStrictExternalMode();
         void setPhaseLockQuartersCount(uint8_t count);

@@ -619,13 +619,6 @@ bool uClockClass::isStrictExternalMode()
 {
     return strict_external_mode;
 }
-bool uClockClass::allowTick() 
-{
-    if (getClockMode()==ClockMode::EXTERNAL_CLOCK && isStrictExternalMode())
-        return external_ticks_remaining > 0;
-    // in internal clock mode or non-strict external clock mode, always allow internal clock to tick
-    return true;
-}
 
 uint32_t uClockClass::getExternalClockStallTimeout()
 {
