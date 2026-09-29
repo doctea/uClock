@@ -27,8 +27,6 @@
  */
 #include "uClock.h"
 
-#define UCLOCK_ENABLE_BUFFER_AVERAGE
-
 //
 // Compile time selection of Platform implementation of timer setup/control/handler
 //
@@ -267,45 +265,18 @@ void uClockClass::handleInternalClock()
             #endif
         }
 
-        #ifdef UCLOCK_ENABLE_BUFFER_AVERAGE
-            // use buffer average for stable tempo estimation; raw ext_interval can be corrupted by USB bursts
-            {
-                uint32_t avg_interval = 0;
-                uint8_t valid = 0;
-                for (uint8_t i = 0; i < ext_interval_buffer_size; i++) {
-                    if (ext_interval_buffer[i] > 0) {
-                        avg_interval += ext_interval_buffer[i];
-                        valid++;
-                    }
-                }
-                if (valid > 0) {
-                    counter = avg_interval / valid;
-                    sync_interval = clock_diff(ext_clock_us, micros());
-
-                    // phase-multiplier interval
-                    if (int_clock_tick <= ext_clock_tick) {
-                        counter -= (sync_interval * PHASE_FACTOR) >> 8;
-                    } else {
-                        if (counter > sync_interval) {
-                            counter += ((counter - sync_interval) * PHASE_FACTOR) >> 8;
-                        }
-                    }
-
-                    external_tempo = constrainBpm(freqToBpm(counter));
-                    if (external_tempo != tempo) {
-                        #ifdef UCLOCK_ENABLE_TRACE
-                            traceEvent(TRACE_TEMPO_CHANGE, UINT8_MAX, 0, 0, 0, -1,
-                                    (int32_t)(external_tempo * 1000.0f));
-                        #endif
-                        tempo = external_tempo;
-                        uClockSetTimerTempo(tempo);
-                    }
+        // use buffer average for stable tempo estimation; raw ext_interval can be corrupted by USB bursts
+        {
+            uint32_t avg_interval = 0;
+            uint8_t valid = 0;
+            for (uint8_t i = 0; i < ext_interval_buffer_size; i++) {
+                if (ext_interval_buffer[i] > 0) {
+                    avg_interval += ext_interval_buffer[i];
+                    valid++;
                 }
             }
-        #else
-            // any external interval avaliable to start sync timer?
-            if (ext_interval > 0) {
-                counter = ext_interval;
+            if (valid > 0) {
+                counter = avg_interval / valid;
                 sync_interval = clock_diff(ext_clock_us, micros());
 
                 // phase-multiplier interval
@@ -321,13 +292,13 @@ void uClockClass::handleInternalClock()
                 if (external_tempo != tempo) {
                     #ifdef UCLOCK_ENABLE_TRACE
                         traceEvent(TRACE_TEMPO_CHANGE, UINT8_MAX, 0, 0, 0, -1,
-                               (int32_t)(external_tempo * 1000.0f));
+                                (int32_t)(external_tempo * 1000.0f));
                     #endif
                     tempo = external_tempo;
                     uClockSetTimerTempo(tempo);
                 }
             }
-        #endif
+        }
     }
 
     // main input clock counter control
@@ -1264,6 +1235,8 @@ void uClockClass::tap()
     // we can make use of mod_sync1_ref for tap
     //uint8_t mod_tap_ref = output_ppqn / PPQN_1;
     // we only set tap if ClockMode is INTERNAL_CLOCK
+
+    // @@TODO: this can probably be replaced by syncInternalClockToBeat now?
 }
 
 // elapsed time support
